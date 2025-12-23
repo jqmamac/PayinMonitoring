@@ -13,7 +13,7 @@ import UserManager from '@/components/UserManager';
 import RoleManager from '@/components/RoleManager';
 import Analytics from '@/components/Analytics';
 import AuditTrail from '@/components/AuditTrail';
-import Sidebar from '@/components/Sidebar';
+import MainLayout from '@/layouts/MainLayout';
 import { DEFAULT_ROLES, DEFAULT_USERS, hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 function App() {
@@ -32,14 +32,13 @@ function App() {
         const loadedRoles = Object.values(data);
         setRoles(loadedRoles);
       } else {
-        // Seed default roles if empty
         DEFAULT_ROLES.forEach(role => {
            set(ref(db, `roles/${role.id}`), role);
         });
       }
     });
 
-    // Seed default users if empty (Basic check)
+    // Seed default users if empty
     const usersRef = ref(db, 'users');
     const unsubscribeUsers = onValue(usersRef, (snapshot) => {
       if (!snapshot.exists()) {
@@ -60,7 +59,6 @@ function App() {
     const storedUser = localStorage.getItem('currentUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
-      // Re-hydrate permission if possible (in a real app we'd fetch fresh user data here)
       setCurrentUser(parsedUser);
     } else {
       const guestUser = { id: 'guest', name: 'Guest', roleId: 'guest' };
@@ -100,12 +98,19 @@ function App() {
     });
   };
 
+  const handleSetCurrentView = (view) => {
+    setCurrentView(view);
+  };
+
   const renderContent = () => {
     if (currentView === 'login') {
       return <LoginPage onLogin={handleLogin} />;
     }
 
-    if (currentView === 'users' && !hasPermission(currentUser, PERMISSIONS.USER_ADD, roles) && !hasPermission(currentUser, PERMISSIONS.USER_EDIT, roles) && !hasPermission(currentUser, PERMISSIONS.USER_DELETE, roles)) {
+    // Permission checks
+    if (currentView === 'users' && !hasPermission(currentUser, PERMISSIONS.USER_ADD, roles) && 
+        !hasPermission(currentUser, PERMISSIONS.USER_EDIT, roles) && 
+        !hasPermission(currentUser, PERMISSIONS.USER_DELETE, roles)) {
        return <Dashboard currentUser={currentUser} />;
     }
     
@@ -123,38 +128,58 @@ function App() {
       case 'roles':
         return <RoleManager currentUser={currentUser} roles={roles} />;
       case 'analytics':
-        return hasPermission(currentUser, PERMISSIONS.VIEW_ANALYTICS, roles) ? <Analytics currentUser={currentUser} /> : <Dashboard currentUser={currentUser} />;
+        return hasPermission(currentUser, PERMISSIONS.VIEW_ANALYTICS, roles) ? 
+          <Analytics currentUser={currentUser} /> : <Dashboard currentUser={currentUser} />;
       case 'audit':
-        return hasPermission(currentUser, PERMISSIONS.VIEW_AUDIT, roles) ? <AuditTrail currentUser={currentUser} roles={roles} /> : <Dashboard currentUser={currentUser} />;
+        return hasPermission(currentUser, PERMISSIONS.VIEW_AUDIT, roles) ? 
+          <AuditTrail currentUser={currentUser} roles={roles} /> : <Dashboard currentUser={currentUser} />;
       default:
         return <Dashboard currentUser={currentUser} />;
     }
   };
 
-  if (isLoading || !currentUser) return null;
+  if (isLoading || !currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-yellow-900/20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-500 mx-auto mb-4"></div>
+          <p className="text-gray-300">Loading PayinMonitor...</p>
+        </div>
+      </div>
+    );
+  }
 
+  // If on login page, show full page login
+  if (currentView === 'login') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-yellow-900/20">
+        <Helmet>
+          <title>Payin Monitoring System - Login</title>
+          <meta name="description" content="Advanced payin monitoring system" />
+        </Helmet>
+        {renderContent()}
+        <Toaster />
+      </div>
+    );
+  }
+
+  // Use MainLayout for all other pages
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-yellow-900">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-yellow-900/20">
       <Helmet>
         <title>Payin Monitoring System - Gold & Black Edition</title>
         <meta name="description" content="Advanced payin monitoring system" />
       </Helmet>
       
-      <div className="flex">
-        {currentView !== 'login' && (
-          <Sidebar 
-            currentView={currentView} 
-            setCurrentView={setCurrentView}
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            roles={roles}
-          />
-        )}
-        
-        <main className={`flex-1 p-8 ${currentView !== 'login' ? 'ml-64' : ''}`}>
-          {renderContent()}
-        </main>
-      </div>
+      <MainLayout
+        currentView={currentView}
+        setCurrentView={handleSetCurrentView}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        roles={roles}
+      >
+        {renderContent()}
+      </MainLayout>
       
       <Toaster />
     </div>

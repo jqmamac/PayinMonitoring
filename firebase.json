@@ -2,11 +2,7 @@
   "hosting": {
     "site": "payin-monitor",
     "public": "dist",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
         "source": "**",
@@ -16,14 +12,16 @@
   },
   "emulators": {
     "hosting": {
-      "port": 4001
+      "port": 4001,
+      "host": "0.0.0.0"
     },
     "ui": {
       "enabled": true
     },
     "singleProjectMode": true,
     "database": {
-      "port": 9000
+      "port": 9001,
+      "host": "0.0.0.0"
     }
   }
 }

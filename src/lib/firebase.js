@@ -25,13 +25,15 @@ const db = getDatabase(app);
 // EMULATOR CONFIGURATION (Development Only)
 // ------------------------------------------------------------------
 // Check if running locally. This is a safe way to connect to emulators only during development.
+// In your firebase.js connection logic
 if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-  // Connect to the Realtime Database Emulator
-  // Default port is 9000, but check what your emulator is using when you run 'firebase emulators:start'
-  connectDatabaseEmulator(db, "127.0.0.1", 9000);
-  console.log("✅ Firebase is connected to LOCAL Emulators (Database: 127.0.0.1:9000)");
-} else {
-  console.log("✅ Firebase is connected to LIVE project.");
+  // Local emulator connections
+  connectDatabaseEmulator(db, "127.0.0.1", 9001);
+  //connectAuthEmulator(auth, "http://127.0.0.1:9099");
+} else if (window.location.hostname.startsWith("192.168.")) { // Network IP range
+  // Connect to network IP emulators
+  connectDatabaseEmulator(db, "192.168.88.232", 9001);
+  //connectAuthEmulator(auth, `http://192.168.88.232:9099`);
 }
 
 export { db };
