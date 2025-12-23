@@ -4,7 +4,13 @@ import { Plus, Edit2, Trash2, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import UserDialog from '@/components/UserDialog';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { 
+  hasPermission, 
+  isSuperAdmin, 
+  canEditUser, 
+  canDeleteUser, 
+  PERMISSIONS 
+} from '@/lib/permissions';
 import { ref, push, set, remove, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
 
@@ -13,6 +19,9 @@ const UserManager = ({ currentUser, roles }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const { toast } = useToast();
+
+  // Check if user is editing their own profile
+  const isEditingOwnProfile = editingUser && editingUser.id === currentUser.id;
 
   useEffect(() => {
     const usersRef = ref(db, 'users');
@@ -26,19 +35,38 @@ const UserManager = ({ currentUser, roles }) => {
   const handleSave = async (userData) => {
     try {
         let action;
+        
         if (editingUser) {
-            if (!hasPermission(currentUser, PERMISSIONS.USER_EDIT, roles)) {
+            // Check edit permission
+            if (!canEditUser(currentUser, editingUser.id, roles)) {
                 toast({
                     title: "Access Denied",
-                    description: "You do not have permission to edit users",
+                    description: "You do not have permission to edit this user",
                     variant: "destructive"
                 });
                 return;
             }
+            
+            // Non-Super Admin users cannot change roles
+            if (!isSuperAdmin(currentUser) && userData.roleId !== editingUser.roleId) {
+                toast({
+                    title: "Access Denied",
+                    description: "Only Super Admin can change user roles",
+                    variant: "destructive"
+                });
+                return;
+            }
+            
+            // If editing own profile and not Super Admin, preserve original role
+            if (isEditingOwnProfile && !isSuperAdmin(currentUser)) {
+                userData.roleId = editingUser.roleId;
+            }
+            
             action = 'updated';
             const userRef = ref(db, `users/${editingUser.id}`);
             await set(userRef, { ...userData, id: editingUser.id });
         } else {
+            // Adding new user - only users with USER_ADD permission can do this
             if (!hasPermission(currentUser, PERMISSIONS.USER_ADD, roles)) {
                 toast({
                     title: "Access Denied",
@@ -47,6 +75,7 @@ const UserManager = ({ currentUser, roles }) => {
                 });
                 return;
             }
+            
             action = 'added';
             const newRef = push(ref(db, 'users'));
             const newId = newRef.key;
@@ -70,21 +99,23 @@ const UserManager = ({ currentUser, roles }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!hasPermission(currentUser, PERMISSIONS.USER_DELETE, roles)) {
+    if (!canDeleteUser(currentUser, id, roles)) {
       toast({
         title: "Access Denied",
-        description: "You do not have permission to delete users",
+        description: "You do not have permission to delete this user",
         variant: "destructive"
       });
       return;
     }
-    if (id === '1') { // Protect default admin
-       toast({
-         title: "Error",
-         description: "Cannot delete the default Super Admin",
-         variant: "destructive"
-       });
-       return;
+
+    // Additional safety: Protect default Super Admin (id: '1')
+    if (id === '1') {
+      toast({
+        title: "Error",
+        description: "Cannot delete the default Super Admin",
+        variant: "destructive"
+      });
+      return;
     }
 
     try {
@@ -111,7 +142,7 @@ const UserManager = ({ currentUser, roles }) => {
             <UserCheck className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-4xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
-            User Manager
+            {isSuperAdmin(currentUser) ? 'User Manager' : 'User Profiles'}
           </h1>
         </div>
         {hasPermission(currentUser, PERMISSIONS.USER_ADD, roles) && (
@@ -128,35 +159,66 @@ const UserManager = ({ currentUser, roles }) => {
         )}
       </div>
 
+      {/* Informational note for non-Super Admin users */}
+      {!isSuperAdmin(currentUser) && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="bg-gradient-to-r from-blue-900/20 to-blue-800/10 border border-blue-600/30 rounded-lg p-4"
+        >
+          <p className="text-blue-300 text-sm">
+            <strong>Note:</strong> {hasPermission(currentUser, PERMISSIONS.USER_EDIT, roles) 
+              ? "You can edit all users, but only Super Admin can change roles." 
+              : "You can only edit your own profile. Role changes require Super Admin permission."}
+          </p>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {users.map((user, index) => {
           const userRole = roles.find(r => r.id === user.roleId)?.name || 'Unknown';
+          const isCurrentUser = user.id === currentUser.id;
+          const showEditButton = canEditUser(currentUser, user.id, roles);
+          const showDeleteButton = canDeleteUser(currentUser, user.id, roles);
+          
           return (
             <motion.div
               key={user.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-6"
+              className={`bg-gradient-to-br from-gray-800 to-gray-900 border rounded-xl p-6 ${
+                isCurrentUser 
+                  ? 'border-yellow-500/40 shadow-lg shadow-yellow-500/10' 
+                  : 'border-yellow-600/20'
+              }`}
             >
               <div className="flex items-start justify-between mb-4">
-                <div className="bg-indigo-900/30 p-3 rounded-lg">
-                  <UserCheck className="w-6 h-6 text-indigo-400" />
+                <div className={`p-3 rounded-lg ${
+                  isCurrentUser ? 'bg-yellow-900/30' : 'bg-indigo-900/30'
+                }`}>
+                  <UserCheck className={`w-6 h-6 ${
+                    isCurrentUser ? 'text-yellow-400' : 'text-indigo-400'
+                  }`} />
                 </div>
                 <div className="flex gap-2">
-                  {hasPermission(currentUser, PERMISSIONS.USER_EDIT, roles) && (
+                  {showEditButton && (
                     <Button
                       size="sm"
                       onClick={() => {
                         setEditingUser(user);
                         setIsDialogOpen(true);
                       }}
-                      className="bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-600/30"
+                      className={`${
+                        isCurrentUser
+                          ? 'bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-400 border-yellow-600/30'
+                          : 'bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border-blue-600/30'
+                      } border`}
                     >
                       <Edit2 className="w-4 h-4" />
                     </Button>
                   )}
-                  {hasPermission(currentUser, PERMISSIONS.USER_DELETE, roles) && user.id !== '1' && (
+                  {showDeleteButton && user.id !== '1' && (
                     <Button
                       size="sm"
                       onClick={() => handleDelete(user.id)}
@@ -167,10 +229,29 @@ const UserManager = ({ currentUser, roles }) => {
                   )}
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">{user.name}</h3>
+              <h3 className="text-xl font-bold text-white mb-2">
+                {user.name}
+                {isCurrentUser && (
+                  <span className="ml-2 text-xs bg-yellow-900/50 text-yellow-300 px-2 py-1 rounded-full">
+                    You
+                  </span>
+                )}
+                {user.roleId === 'superadmin' && !isCurrentUser && (
+                  <span className="ml-2 text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded-full">
+                    Super Admin
+                  </span>
+                )}
+              </h3>
               <p className="text-gray-400 text-sm">Username: {user.username}</p>
               <div className="pt-3 border-t border-gray-700 mt-3">
-                <p className="text-xs text-yellow-500">Role: {userRole}</p>
+                <p className={`text-xs ${user.roleId === 'superadmin' ? 'text-red-400' : 'text-yellow-500'}`}>
+                  Role: {userRole}
+                </p>
+                {isCurrentUser && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Click edit to update your profile
+                  </p>
+                )}
               </div>
             </motion.div>
           );
@@ -186,6 +267,8 @@ const UserManager = ({ currentUser, roles }) => {
         onSave={handleSave}
         editingUser={editingUser}
         roles={roles}
+        isSuperAdmin={isSuperAdmin(currentUser)}
+        isEditingOwnProfile={isEditingOwnProfile}
       />
     </div>
   );
