@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "poulty-farm-app"
-  }
+    "default": "poulty-farm-app",
+    "staging": "poulty-farm-app"
+  },
+  "targets": {},
+  "etags": {}
 }

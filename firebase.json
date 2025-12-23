@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "payin-monitor",
+     "site": "payin-monitor",
     "public": "dist",
     "ignore": [
       "firebase.json",
