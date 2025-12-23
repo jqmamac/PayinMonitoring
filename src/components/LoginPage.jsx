@@ -118,11 +118,6 @@ const LoginPage = ({ onLogin }) => {
               </Button>
             </div>
           </form>
-          
-          <div className="mt-8 p-4 bg-gray-900 border border-yellow-600/20 rounded-lg">
-            <p className="text-xs text-gray-400 mb-2">Demo Credentials:</p>
-            <p className="text-xs text-gray-300">Admin: admin / admin123</p>
-          </div>
         </div>
       </motion.div>
     </div>
