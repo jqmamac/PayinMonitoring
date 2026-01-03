@@ -1,126 +1,92 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, Calendar, TrendingUp, Filter } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { FileText, Search, Filter } from 'lucide-react';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
 
-const Analytics = ({ currentUser }) => {
-  const [filters, setFilters] = useState({
-    startDate: '',
-    endDate: '',
-    referror: '',
-    mentor: ''
-  });
-  const [analytics, setAnalytics] = useState({
-    totalPayins: 0,
-    totalAmount: 0,
-    avgAmount: 0,
-    byReferror: [],
-    byMentor: [],
-    byMonth: []
-  });
-  const [referrors, setReferrors] = useState([]);
-  const [mentors, setMentors] = useState([]);
-  const [payins, setPayins] = useState([]);
+const AuditTrail = ({ currentUser, roles }) => {
+  const [audits, setAudits] = useState([]);
+  const [filteredAudits, setFilteredAudits] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterAction, setFilterAction] = useState('');
 
   useEffect(() => {
-    const payinsRef = ref(db, 'payins');
-    const referrorsRef = ref(db, 'referrors');
-    const mentorsRef = ref(db, 'mentors');
-
-    const unsubPayins = onValue(payinsRef, (snapshot) => {
-        setPayins(snapshot.exists() ? Object.values(snapshot.val()) : []);
-    });
-    const unsubRef = onValue(referrorsRef, (snapshot) => {
-        setReferrors(snapshot.exists() ? Object.values(snapshot.val()) : []);
-    });
-    const unsubMen = onValue(mentorsRef, (snapshot) => {
-        setMentors(snapshot.exists() ? Object.values(snapshot.val()) : []);
-    });
-
-    return () => {
-        unsubPayins();
-        unsubRef();
-        unsubMen();
+    if (hasPermission(currentUser, PERMISSIONS.VIEW_AUDIT, roles)) {
+      const auditsRef = ref(db, 'audits');
+      const unsubscribe = onValue(auditsRef, (snapshot) => {
+        const data = snapshot.val();
+        setAudits(data ? Object.values(data).reverse() : []);
+      });
+      return () => unsubscribe();
     }
-  }, []);
+  }, [currentUser, roles]);
 
   useEffect(() => {
-    calculateAnalytics();
-  }, [filters, payins]);
+    filterAudits();
+  }, [searchTerm, filterAction, audits]);
 
-  const calculateAnalytics = () => {
-    let filteredPayins = [...payins];
+  const filterAudits = () => {
+    let filtered = audits;
 
-    // Apply filters
-    if (filters.startDate) {
-      filteredPayins = filteredPayins.filter(p => p.date >= filters.startDate);
-    }
-    if (filters.endDate) {
-      filteredPayins = filteredPayins.filter(p => p.date <= filters.endDate);
-    }
-    if (filters.referror) {
-      filteredPayins = filteredPayins.filter(p => p.referror === filters.referror);
-    }
-    if (filters.mentor) {
-      filteredPayins = filteredPayins.filter(p => p.mentor === filters.mentor);
+    if (searchTerm) {
+      filtered = filtered.filter(audit =>
+        (audit.details || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (audit.user || '').toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
 
-    // Calculate totals
-    const totalAmount = filteredPayins.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-    const avgAmount = filteredPayins.length > 0 ? totalAmount / filteredPayins.length : 0;
+    if (filterAction) {
+      filtered = filtered.filter(audit => audit.action === filterAction);
+    }
 
-    // Group by referror
-    const byReferror = filteredPayins.reduce((acc, p) => {
-      const existing = acc.find(r => r.name === p.referror);
-      if (existing) {
-        existing.count++;
-        existing.amount += parseFloat(p.amount || 0);
-      } else {
-        acc.push({ name: p.referror, count: 1, amount: parseFloat(p.amount || 0) });
-      }
-      return acc;
-    }, []).sort((a, b) => b.amount - a.amount);
+    setFilteredAudits(filtered);
+  };
 
-    // Group by mentor
-    const byMentor = filteredPayins.reduce((acc, p) => {
-      const existing = acc.find(m => m.name === p.mentor);
-      if (existing) {
-        existing.count++;
-        existing.amount += parseFloat(p.amount || 0);
-      } else {
-        acc.push({ name: p.mentor, count: 1, amount: parseFloat(p.amount || 0) });
-      }
-      return acc;
-    }, []).sort((a, b) => b.amount - a.amount);
+  const getActionColor = (action) => {
+    switch (action) {
+      case 'CREATE':
+        return 'text-green-400 bg-green-900/20 border-green-600/30';
+      case 'UPDATE':
+        return 'text-blue-400 bg-blue-900/20 border-blue-600/30';
+      case 'DELETE':
+        return 'text-red-400 bg-red-900/20 border-red-600/30';
+      default:
+        return 'text-gray-400 bg-gray-900/20 border-gray-600/30';
+    }
+  };
 
-    setAnalytics({
-      totalPayins: filteredPayins.length,
-      totalAmount,
-      avgAmount,
-      byReferror,
-      byMentor
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
-  const resetFilters = () => {
-    setFilters({
-      startDate: '',
-      endDate: '',
-      referror: '',
-      mentor: ''
-    });
-  };
+  if (!hasPermission(currentUser, PERMISSIONS.VIEW_AUDIT, roles)) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-12 text-center">
+        <div className="text-gray-500">
+          <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+          <p className="text-xl font-semibold">Access Denied</p>
+          <p className="mt-2">You do not have permission to view the Audit Trail.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <div className="bg-gradient-to-br from-green-500 to-green-700 p-3 rounded-lg">
-          <BarChart3 className="w-8 h-8 text-white" />
+        <div className="bg-gradient-to-br from-orange-500 to-orange-700 p-3 rounded-lg">
+          <FileText className="w-8 h-8 text-white" />
         </div>
         <h1 className="text-4xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
-          Analytics Dashboard
+          Audit Trail
         </h1>
       </div>
 
@@ -130,147 +96,70 @@ const Analytics = ({ currentUser }) => {
         animate={{ opacity: 1, y: 0 }}
         className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-6"
       >
-        <div className="flex items-center gap-2 mb-4">
-          <Filter className="w-5 h-5 text-yellow-400" />
-          <h2 className="text-xl font-bold text-white">Filters</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Start Date</label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
-              type="date"
-              value={filters.startDate}
-              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-900 border border-yellow-600/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              type="text"
+              placeholder="Search by details or user..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-yellow-600/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-yellow-500"
             />
           </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">End Date</label>
-            <input
-              type="date"
-              value={filters.endDate}
-              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-900 border border-yellow-600/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-yellow-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Referror</label>
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <select
-              value={filters.referror}
-              onChange={(e) => setFilters({ ...filters, referror: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-900 border border-yellow-600/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              value={filterAction}
+              onChange={(e) => setFilterAction(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-gray-900 border border-yellow-600/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-yellow-500"
             >
-              <option value="">All Referrors</option>
-              {referrors.map(r => (
-                <option key={r.id} value={r.name}>{r.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Mentor</label>
-            <select
-              value={filters.mentor}
-              onChange={(e) => setFilters({ ...filters, mentor: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-900 border border-yellow-600/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-yellow-500"
-            >
-              <option value="">All Mentors</option>
-              {mentors.map(m => (
-                <option key={m.id} value={m.name}>{m.name}</option>
-              ))}
+              <option value="">All Actions</option>
+              <option value="CREATE">Create</option>
+              <option value="UPDATE">Update</option>
+              <option value="DELETE">Delete</option>
             </select>
           </div>
         </div>
-        <div className="mt-4">
-          <Button
-            onClick={resetFilters}
-            className="bg-gray-700 hover:bg-gray-600 text-white"
-          >
-            Reset Filters
-          </Button>
-        </div>
       </motion.div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-gradient-to-br from-yellow-900/20 to-yellow-800/10 border border-yellow-600/20 rounded-xl p-6"
-        >
-          <p className="text-gray-400 text-sm mb-2">Total Payins</p>
-          <p className="text-4xl font-bold text-yellow-400">{analytics.totalPayins}</p>
-        </motion.div>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-gradient-to-br from-green-900/20 to-green-800/10 border border-green-600/20 rounded-xl p-6"
-        >
-          <p className="text-gray-400 text-sm mb-2">Total Amount</p>
-          <p className="text-4xl font-bold text-green-400">₱{analytics.totalAmount.toLocaleString()}</p>
-        </motion.div>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-gradient-to-br from-blue-900/20 to-blue-800/10 border border-blue-600/20 rounded-xl p-6"
-        >
-          <p className="text-gray-400 text-sm mb-2">Average Amount</p>
-          <p className="text-4xl font-bold text-blue-400">₱{analytics.avgAmount.toFixed(2)}</p>
-        </motion.div>
-      </div>
-
-      {/* By Referror */}
+      {/* Audit Log */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
+        transition={{ delay: 0.2 }}
         className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-6"
       >
-        <h2 className="text-2xl font-bold text-yellow-400 mb-4">Performance by Referror</h2>
         <div className="space-y-3">
-          {analytics.byReferror.map((ref, index) => (
-            <div key={index} className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white font-semibold">{ref.name}</span>
-                <span className="text-green-400 font-bold">₱{ref.amount.toLocaleString()}</span>
+          {filteredAudits.map((audit, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.05 }}
+              className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 hover:border-yellow-600/50 transition-all duration-300"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${getActionColor(audit.action)}`}>
+                    {audit.action}
+                  </span>
+                  <span className="text-sm text-gray-400">{audit.entity}</span>
+                </div>
+                <span className="text-xs text-gray-500">{formatTimestamp(audit.timestamp)}</span>
               </div>
-              <div className="flex items-center justify-between text-sm text-gray-400">
-                <span>{ref.count} payins</span>
-                <span>Avg: ₱{(ref.amount / ref.count).toFixed(2)}</span>
+              <p className="text-white mb-2">{audit.details}</p>
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>User: <span className="text-yellow-400">{audit.user}</span></span>
+                <span>ID: {audit.entityId}</span>
               </div>
-            </div>
+            </motion.div>
           ))}
-          {analytics.byReferror.length === 0 && (
-            <p className="text-center text-gray-500 py-8">No data available</p>
-          )}
-        </div>
-      </motion.div>
-
-      {/* By Mentor */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-        className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-6"
-      >
-        <h2 className="text-2xl font-bold text-yellow-400 mb-4">Performance by Mentor</h2>
-        <div className="space-y-3">
-          {analytics.byMentor.map((mentor, index) => (
-            <div key={index} className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white font-semibold">{mentor.name}</span>
-                <span className="text-purple-400 font-bold">₱{mentor.amount.toLocaleString()}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm text-gray-400">
-                <span>{mentor.count} payins</span>
-                <span>Avg: ₱{(mentor.amount / mentor.count).toFixed(2)}</span>
-              </div>
+          {filteredAudits.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No audit logs found</p>
             </div>
-          ))}
-          {analytics.byMentor.length === 0 && (
-            <p className="text-center text-gray-500 py-8">No data available</p>
           )}
         </div>
       </motion.div>
@@ -278,4 +167,4 @@ const Analytics = ({ currentUser }) => {
   );
 };
 
-export default Analytics;
+export default AuditTrail;
