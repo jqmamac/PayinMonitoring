@@ -26,14 +26,14 @@ const db = getDatabase(app);
 // ------------------------------------------------------------------
 // Check if running locally. This is a safe way to connect to emulators only during development.
 // In your firebase.js connection logic
-if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-  // Local emulator connections
-  connectDatabaseEmulator(db, "127.0.0.1", 9001);
-  //connectAuthEmulator(auth, "http://127.0.0.1:9099");
-} else if (window.location.hostname.startsWith("192.168.")) { // Network IP range
-  // Connect to network IP emulators
-  connectDatabaseEmulator(db, "192.168.88.232", 9001);
-  //connectAuthEmulator(auth, `http://192.168.88.232:9099`);
-}
+// if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+//   // Local emulator connections
+//   connectDatabaseEmulator(db, "127.0.0.1", 9001);
+//   //connectAuthEmulator(auth, "http://127.0.0.1:9099");
+// } else if (window.location.hostname.startsWith("192.168.")) { // Network IP range
+//   // Connect to network IP emulators
+//   connectDatabaseEmulator(db, "192.168.88.232", 9001);
+//   //connectAuthEmulator(auth, `http://192.168.88.232:9099`);
+// }
 
 export { db };

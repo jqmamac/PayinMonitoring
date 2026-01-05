@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Users, UserCog, TrendingUp, AlertCircle } from 'lucide-react';
+import { DollarSign, Users, UserCog, TrendingUp, AlertCircle, Trophy, Crown } from 'lucide-react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
 
@@ -10,7 +10,8 @@ const Dashboard = ({ currentUser }) => {
     totalAmount: 0,
     activeReferrors: 0,
     activeMentors: 0,
-    recentPayins: []
+    recentPayins: [],
+    topPerformers: []
   });
 
   useEffect(() => {
@@ -44,16 +45,47 @@ const Dashboard = ({ currentUser }) => {
     };
   }, []);
 
+  const calculateTopPerformers = (payins) => {
+    // Group payins by referror
+    const referrorMap = new Map();
+    
+    payins.forEach(payin => {
+      const referrorName = payin.referror || 'Unknown';
+      const amount = parseFloat(payin.amount || 0);
+      
+      if (referrorMap.has(referrorName)) {
+        const existing = referrorMap.get(referrorName);
+        existing.totalAmount += amount;
+        existing.count += 1;
+      } else {
+        referrorMap.set(referrorName, {
+          name: referrorName,
+          totalAmount: amount,
+          count: 1
+        });
+      }
+    });
+    
+    // Convert to array and sort by total amount (highest first)
+    const performers = Array.from(referrorMap.values())
+      .sort((a, b) => b.totalAmount - a.totalAmount)
+      .slice(0, 5); // Top 5 performers
+    
+    return performers;
+  };
+
   const updateStats = (payins, refCount, menCount) => {
     const totalAmount = payins.reduce((sum, payin) => sum + parseFloat(payin.amount || 0), 0);
     const recentPayins = [...payins].slice(-5).reverse();
+    const topPerformers = calculateTopPerformers(payins);
 
     setStats({
       totalPayins: payins.length,
       totalAmount,
       activeReferrors: refCount,
       activeMentors: menCount,
-      recentPayins
+      recentPayins,
+      topPerformers
     });
   };
 
@@ -122,10 +154,75 @@ const Dashboard = ({ currentUser }) => {
         })}
       </div>
 
+      {/* Top Performers Section */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
+        className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-6"
+      >
+        <div className="flex items-center gap-2 mb-6">
+          <div className="bg-gradient-to-br from-yellow-500 to-yellow-700 p-2 rounded-lg">
+            <Trophy className="w-6 h-6 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-yellow-400">Top Performers</h2>
+        </div>
+        {stats.topPerformers.length > 0 ? (
+          <div className="space-y-4">
+            {stats.topPerformers.map((performer, index) => (
+              <motion.div
+                key={performer.name}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.5 + (index * 0.1) }}
+                className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 hover:border-yellow-600/50 transition-all duration-300"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    {/* Rank badge with different colors for top 3 */}
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold ${
+                      index === 0 ? 'bg-gradient-to-br from-yellow-500 to-yellow-700' :
+                      index === 1 ? 'bg-gradient-to-br from-gray-400 to-gray-600' :
+                      index === 2 ? 'bg-gradient-to-br from-amber-700 to-amber-900' :
+                      'bg-gradient-to-br from-gray-800 to-gray-900'
+                    }`}>
+                      <span className="text-white">
+                        {index === 0 ? <Crown className="w-5 h-5" /> : `#${index + 1}`}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">{performer.name}</p>
+                      <p className="text-sm text-gray-400">
+                        {performer.count} payin{performer.count !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-green-400">₱{performer.totalAmount.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">
+                      {stats.totalAmount > 0 
+                        ? `${((performer.totalAmount / stats.totalAmount) * 100).toFixed(1)}% of total`
+                        : '0% of total'
+                      }
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 text-gray-500">
+            <Trophy className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>No performance data available</p>
+          </div>
+        )}
+      </motion.div>
+
+      {/* Recent Payins Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
         className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-6"
       >
         <h2 className="text-2xl font-bold text-yellow-400 mb-6">Recent Payins</h2>

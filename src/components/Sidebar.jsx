@@ -100,7 +100,7 @@ const Sidebar = ({
             </div>
           ) : (
             <div className="text-xs text-gray-500">
-              PayinMonitor v1.0
+              PayinMonitor v1.8
             </div>
           )}
         </div>
