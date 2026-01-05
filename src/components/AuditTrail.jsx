@@ -1,3 +1,4 @@
+// src/components/AuditTrail.jsx
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Search, Filter } from 'lucide-react';
@@ -65,6 +66,35 @@ const AuditTrail = ({ currentUser, roles }) => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Function to render changes in audit log
+  const renderChanges = (changes) => {
+    if (!changes) return null;
+    
+    return (
+      <div className="mt-2 text-xs text-gray-400 border-l-2 border-yellow-600/30 pl-3">
+        {changes.old && changes.new && (
+          <div>
+            <strong>Changes:</strong>
+            <ul className="mt-1 space-y-1">
+              {changes.old.name !== changes.new.name && (
+                <li>Name: <span className="text-red-400">{changes.old.name}</span> → <span className="text-green-400">{changes.new.name}</span></li>
+              )}
+              {changes.old.username !== changes.new.username && (
+                <li>Username: <span className="text-red-400">{changes.old.username}</span> → <span className="text-green-400">{changes.new.username}</span></li>
+              )}
+              {changes.old.roleId !== changes.new.roleId && (
+                <li>Role: <span className="text-red-400">{changes.old.roleId}</span> → <span className="text-green-400">{changes.new.roleId}</span></li>
+              )}
+              {changes.new.password && (
+                <li>Password: <span className="text-yellow-400">[Reset]</span></li>
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (!hasPermission(currentUser, PERMISSIONS.VIEW_AUDIT, roles)) {
@@ -149,7 +179,8 @@ const AuditTrail = ({ currentUser, roles }) => {
                 <span className="text-xs text-gray-500">{formatTimestamp(audit.timestamp)}</span>
               </div>
               <p className="text-white mb-2">{audit.details}</p>
-              <div className="flex items-center justify-between text-xs text-gray-500">
+              {audit.changes && renderChanges(audit.changes)}
+              <div className="flex items-center justify-between text-xs text-gray-500 mt-3">
                 <span>User: <span className="text-yellow-400">{audit.user}</span></span>
                 <span>ID: {audit.entityId}</span>
               </div>

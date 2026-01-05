@@ -1,7 +1,7 @@
+// src/components/UserManager.jsx
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Edit2, Trash2, UserCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import UserDialog from '@/components/UserDialog';
 import { 
@@ -13,6 +13,7 @@ import {
 } from '@/lib/permissions';
 import { ref, push, set, remove, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
+import { auditHelpers } from '@/lib/audit';
 
 const UserManager = ({ currentUser, roles }) => {
   const [users, setUsers] = useState([]);
@@ -35,6 +36,7 @@ const UserManager = ({ currentUser, roles }) => {
   const handleSave = async (userData) => {
     try {
         let action;
+        let savedUser = null;
         
         if (editingUser) {
             // Check edit permission
@@ -57,6 +59,16 @@ const UserManager = ({ currentUser, roles }) => {
                 return;
             }
             
+            // Non-Super Admin users cannot edit passwords for others
+            if (!isSuperAdmin(currentUser) && userData.password && !isEditingOwnProfile) {
+                toast({
+                    title: "Access Denied",
+                    description: "Only Super Admin can change passwords for other users",
+                    variant: "destructive"
+                });
+                return;
+            }
+            
             // If editing own profile and not Super Admin, preserve original role
             if (isEditingOwnProfile && !isSuperAdmin(currentUser)) {
                 userData.roleId = editingUser.roleId;
@@ -64,7 +76,29 @@ const UserManager = ({ currentUser, roles }) => {
             
             action = 'updated';
             const userRef = ref(db, `users/${editingUser.id}`);
-            await set(userRef, { ...userData, id: editingUser.id });
+            
+            // Prepare user object for saving
+            savedUser = { ...editingUser };
+            
+            // Update fields that changed
+            if (userData.name) savedUser.name = userData.name;
+            if (userData.username) savedUser.username = userData.username;
+            if (userData.roleId) savedUser.roleId = userData.roleId;
+            
+            // Only update password if provided
+            if (userData.password) {
+                savedUser.password = userData.password; // WARNING: In production, hash this!
+            }
+            
+            await set(userRef, savedUser);
+            
+            // Log update to audit trail
+            const auditUser = {
+                ...editingUser,
+                password: userData.password ? '[HIDDEN]' : undefined
+            };
+            await auditHelpers.logUserUpdate(currentUser, editingUser, auditUser);
+            
         } else {
             // Adding new user - only users with USER_ADD permission can do this
             if (!hasPermission(currentUser, PERMISSIONS.USER_ADD, roles)) {
@@ -79,7 +113,19 @@ const UserManager = ({ currentUser, roles }) => {
             action = 'added';
             const newRef = push(ref(db, 'users'));
             const newId = newRef.key;
-            await set(newRef, { ...userData, id: newId });
+            savedUser = { 
+                ...userData, 
+                id: newId,
+                password: userData.password // WARNING: In production, hash this!
+            };
+            await set(newRef, savedUser);
+            
+            // Log creation to audit trail
+            const auditUser = {
+                ...savedUser,
+                password: '[HIDDEN]'
+            };
+            await auditHelpers.logUserCreate(currentUser, auditUser);
         }
 
         setIsDialogOpen(false);
@@ -87,7 +133,7 @@ const UserManager = ({ currentUser, roles }) => {
 
         toast({
             title: "Success",
-            description: `User ${action} successfully`,
+            description: `User ${action} successfully${userData.password ? ' with password update' : ''}`,
         });
     } catch (error) {
          toast({
@@ -98,8 +144,8 @@ const UserManager = ({ currentUser, roles }) => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!canDeleteUser(currentUser, id, roles)) {
+  const handleDelete = async (user) => {
+    if (!canDeleteUser(currentUser, user.id, roles)) {
       toast({
         title: "Access Denied",
         description: "You do not have permission to delete this user",
@@ -109,7 +155,7 @@ const UserManager = ({ currentUser, roles }) => {
     }
 
     // Additional safety: Protect default Super Admin (id: '1')
-    if (id === '1') {
+    if (user.id === '1') {
       toast({
         title: "Error",
         description: "Cannot delete the default Super Admin",
@@ -119,8 +165,12 @@ const UserManager = ({ currentUser, roles }) => {
     }
 
     try {
-        const userRef = ref(db, `users/${id}`);
+        const userRef = ref(db, `users/${user.id}`);
         await remove(userRef);
+        
+        // Log deletion to audit trail
+        await auditHelpers.logUserDelete(currentUser, user);
+        
         toast({
             title: "Success",
             description: "User deleted successfully",
@@ -146,16 +196,16 @@ const UserManager = ({ currentUser, roles }) => {
           </h1>
         </div>
         {hasPermission(currentUser, PERMISSIONS.USER_ADD, roles) && (
-          <Button
+          <button
             onClick={() => {
               setEditingUser(null);
               setIsDialogOpen(true);
             }}
-            className="bg-gradient-to-r from-yellow-500 to-yellow-700 hover:from-yellow-600 hover:to-yellow-800 text-black font-bold shadow-lg hover:shadow-yellow-500/50"
+            className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-700 hover:from-yellow-600 hover:to-yellow-800 text-black font-bold rounded-md shadow-lg hover:shadow-yellow-500/50 transition-all flex items-center"
           >
             <Plus className="w-5 h-5 mr-2" />
             Add User
-          </Button>
+          </button>
         )}
       </div>
 
@@ -203,29 +253,27 @@ const UserManager = ({ currentUser, roles }) => {
                 </div>
                 <div className="flex gap-2">
                   {showEditButton && (
-                    <Button
-                      size="sm"
+                    <button
                       onClick={() => {
                         setEditingUser(user);
                         setIsDialogOpen(true);
                       }}
-                      className={`${
+                      className={`px-3 py-2 rounded-md ${
                         isCurrentUser
-                          ? 'bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-400 border-yellow-600/30'
-                          : 'bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border-blue-600/30'
-                      } border`}
+                          ? 'bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-400 border border-yellow-600/30'
+                          : 'bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-600/30'
+                      }`}
                     >
                       <Edit2 className="w-4 h-4" />
-                    </Button>
+                    </button>
                   )}
                   {showDeleteButton && user.id !== '1' && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleDelete(user.id)}
-                      className="bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-600/30"
+                    <button
+                      onClick={() => handleDelete(user)}
+                      className="px-3 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-600/30 rounded-md"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </Button>
+                    </button>
                   )}
                 </div>
               </div>

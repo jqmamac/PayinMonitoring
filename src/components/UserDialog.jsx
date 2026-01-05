@@ -1,12 +1,25 @@
+// src/components/UserDialog.jsx
 import React, { useState, useEffect } from 'react';
 import SimpleSelect from '@/components/ui/SimpleSelect';
-
 
 const UserDialog = ({ isOpen, onClose, onSave, editingUser, roles, isSuperAdmin, isEditingOwnProfile }) => {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [roleId, setRoleId] = useState('');
+  const [showPasswordField, setShowPasswordField] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+
+  // Password validation
+  const validatePassword = (pass) => {
+    if (!pass) return { valid: true, message: '' };
+    
+    if (pass.length < 6) {
+      return { valid: false, message: 'Password must be at least 6 characters' };
+    }
+    
+    return { valid: true, message: '' };
+  };
 
   useEffect(() => {
     if (editingUser) {
@@ -14,18 +27,43 @@ const UserDialog = ({ isOpen, onClose, onSave, editingUser, roles, isSuperAdmin,
       setUsername(editingUser.username || '');
       setRoleId(editingUser.roleId || '');
       setPassword('');
+      setShowPasswordField(false);
+      setPasswordError('');
     } else {
       setName('');
       setUsername('');
       setPassword('');
       setRoleId(roles.length > 0 ? roles[0].id : '');
+      setShowPasswordField(true);
+      setPasswordError('');
     }
   }, [editingUser, roles]);
 
   if (!isOpen) return null;
 
+  // Determine if password field should be shown
+  const shouldShowPasswordField = () => {
+    if (!editingUser) return true;
+    if (isEditingOwnProfile) return true;
+    if (isSuperAdmin) return true;
+    if (showPasswordField) return true;
+    return false;
+  };
+
+  const isPasswordFieldShown = shouldShowPasswordField();
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // Validate password if provided
+    if (password) {
+      const validation = validatePassword(password);
+      if (!validation.valid) {
+        setPasswordError(validation.message);
+        return;
+      }
+    }
+    
     const userData = {
       name,
       username,
@@ -82,8 +120,8 @@ const UserDialog = ({ isOpen, onClose, onSave, editingUser, roles, isSuperAdmin,
               />
             </div>
 
-            {/* Password Field */}
-            {(!editingUser || isEditingOwnProfile) && (
+            {/* Password Field - Conditionally shown */}
+            {isPasswordFieldShown && (
               <div className="space-y-2">
                 <label htmlFor="password" className="block text-sm font-medium text-gray-300">
                   {editingUser ? 'New Password (leave blank to keep current)' : 'Password'}
@@ -92,33 +130,64 @@ const UserDialog = ({ isOpen, onClose, onSave, editingUser, roles, isSuperAdmin,
                   id="password"
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    const validation = validatePassword(e.target.value);
+                    setPasswordError(validation.message);
+                  }}
                   className="w-full px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                   required={!editingUser}
                   minLength={6}
+                  placeholder={editingUser ? "Enter new password or leave blank" : "Enter password"}
                 />
+                {passwordError && (
+                  <p className="text-xs text-red-500 mt-1">{passwordError}</p>
+                )}
+                {editingUser && isSuperAdmin && !isEditingOwnProfile && (
+                  <p className="text-xs text-yellow-500 mt-1">
+                    Super Admin can reset user passwords
+                  </p>
+                )}
               </div>
             )}
 
-            {/* Role Field using custom Select */}
-<div className="space-y-2">
-  <label className="block text-sm font-medium text-gray-300">
-    Role
-  </label>
-  <SimpleSelect
-    value={roleId}
-    onChange={setRoleId}
-    disabled={!isSuperAdmin && editingUser}
-    placeholder="Select a role"
-    options={roles
-      .filter(role => role.id !== 'guest')
-      .map(role => ({
-        value: role.id,
-        label: role.name,
-        className: role.id === 'superadmin' ? 'text-red-300' : ''
-      }))}
-  />
-</div>
+            {/* Toggle button for non-Super Admin to show password field for self */}
+            {editingUser && !isSuperAdmin && isEditingOwnProfile && !showPasswordField && (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordField(true)}
+                  className="w-full px-3 py-2 bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-600/30 rounded-md text-sm transition-colors"
+                >
+                  Change Password
+                </button>
+              </div>
+            )}
+
+            {/* Role Field */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-300">
+                Role
+              </label>
+              <SimpleSelect
+                value={roleId}
+                onChange={setRoleId}
+                disabled={!isSuperAdmin && editingUser}
+                placeholder="Select a role"
+                options={roles
+                  .filter(role => role.id !== 'guest')
+                  .map(role => ({
+                    value: role.id,
+                    label: role.name,
+                    className: role.id === 'superadmin' ? 'text-red-300' : ''
+                  }))}
+              />
+              {editingUser && !isSuperAdmin && (
+                <p className="text-xs text-yellow-500 mt-1">
+                  Role changes require Super Admin permission
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="px-6 py-4 border-t border-yellow-600/30 flex justify-end gap-3">
