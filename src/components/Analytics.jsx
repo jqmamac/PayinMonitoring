@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, Filter, FileText, FileSpreadsheet } from 'lucide-react';
+import { 
+  BarChart3, Calendar, TrendingUp, Filter, Download, 
+  FileText, FileSpreadsheet, Eye, ChevronDown, ChevronUp, X 
+} from 'lucide-react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
 import * as XLSX from 'xlsx';
@@ -25,6 +28,8 @@ const Analytics = ({ currentUser }) => {
   const [referrors, setReferrors] = useState([]);
   const [mentors, setMentors] = useState([]);
   const [payins, setPayins] = useState([]);
+  const [expandedReferror, setExpandedReferror] = useState(null);
+  const [selectedReferrorDetails, setSelectedReferrorDetails] = useState(null);
 
   useEffect(() => {
     const payinsRef = ref(db, 'payins');
@@ -64,6 +69,55 @@ const Analytics = ({ currentUser }) => {
     return false;
   };
 
+  // Helper function to get encoded amount for a payin
+  const getEncodedAmount = (payin) => {
+    if (!isPayinEncoded(payin)) return 0;
+    
+    // Use encodedAmount if available, otherwise use amount for old data
+    if (payin.encodedAmount !== undefined && payin.encodedAmount !== '') {
+      return parseFloat(payin.encodedAmount || 0);
+    }
+    
+    // For old data without encodedAmount field
+    return parseFloat(payin.amount || 0);
+  };
+
+  // Function to get payins for a specific referror
+  const getPayinsForReferror = (referrorName) => {
+    let filtered = payins.filter(p => p.referror === referrorName);
+    
+    // Apply filters
+    if (filters.startDate) {
+      filtered = filtered.filter(p => p.date >= filters.startDate);
+    }
+    if (filters.endDate) {
+      filtered = filtered.filter(p => p.date <= filters.endDate);
+    }
+    if (filters.mentor) {
+      filtered = filtered.filter(p => p.mentor === filters.mentor);
+    }
+    
+    return filtered;
+  };
+
+  // Function to get payins for a specific mentor
+  const getPayinsForMentor = (mentorName) => {
+    let filtered = payins.filter(p => p.mentor === mentorName);
+    
+    // Apply filters
+    if (filters.startDate) {
+      filtered = filtered.filter(p => p.date >= filters.startDate);
+    }
+    if (filters.endDate) {
+      filtered = filtered.filter(p => p.date <= filters.endDate);
+    }
+    if (filters.referror) {
+      filtered = filtered.filter(p => p.referror === filters.referror);
+    }
+    
+    return filtered;
+  };
+
   const calculateAnalytics = () => {
     let filteredPayins = [...payins];
 
@@ -83,28 +137,34 @@ const Analytics = ({ currentUser }) => {
 
     // Calculate totals
     const totalAmount = filteredPayins.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-    const totalAmountEncoded = filteredPayins
-      .filter(p => isPayinEncoded(p))
-      .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-    const totalAmountOnHand = filteredPayins
-      .filter(p => !isPayinEncoded(p))
-      .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    
+    // Calculate encoded amount - using the helper function
+    const totalAmountEncoded = filteredPayins.reduce((sum, p) => {
+      return sum + getEncodedAmount(p);
+    }, 0);
+    
+    // Calculate on-hand amount (total amount - encoded amount)
+    // This includes partial amounts automatically
+    const totalAmountOnHand = totalAmount - totalAmountEncoded;
 
-    // Group by referror - FIXED: Now ordered by highest total amount (not count)
+    // Group by referror
     const byReferror = filteredPayins.reduce((acc, p) => {
       const refName = p.referror || 'Unknown Referror';
       const existing = acc.find(r => r.name === refName);
       const amount = parseFloat(p.amount || 0);
       const encoded = isPayinEncoded(p);
+      const encodedAmount = getEncodedAmount(p);
+      const onHandAmount = encoded ? (amount - encodedAmount) : amount;
       
       if (existing) {
         existing.count++;
         existing.totalAmount += amount;
+        existing.encodedAmount += encodedAmount;
+        existing.onHandAmount += onHandAmount;
+        
         if (encoded) {
-          existing.encodedAmount += amount;
           existing.encodedCount++;
         } else {
-          existing.onHandAmount += amount;
           existing.onHandCount++;
         }
       } else {
@@ -114,12 +174,12 @@ const Analytics = ({ currentUser }) => {
           encodedCount: encoded ? 1 : 0,
           onHandCount: encoded ? 0 : 1,
           totalAmount: amount,
-          encodedAmount: encoded ? amount : 0,
-          onHandAmount: encoded ? 0 : amount
+          encodedAmount: encodedAmount,
+          onHandAmount: onHandAmount
         });
       }
       return acc;
-    }, []).sort((a, b) => b.totalAmount - a.totalAmount); // CHANGED: Now sorts by totalAmount instead of count
+    }, []).sort((a, b) => b.totalAmount - a.totalAmount); // Sort by highest total amount
 
     // Group by mentor
     const byMentor = filteredPayins.reduce((acc, p) => {
@@ -127,15 +187,18 @@ const Analytics = ({ currentUser }) => {
       const existing = acc.find(m => m.name === mentorName);
       const amount = parseFloat(p.amount || 0);
       const encoded = isPayinEncoded(p);
+      const encodedAmount = getEncodedAmount(p);
+      const onHandAmount = encoded ? (amount - encodedAmount) : amount;
       
       if (existing) {
         existing.count++;
         existing.totalAmount += amount;
+        existing.encodedAmount += encodedAmount;
+        existing.onHandAmount += onHandAmount;
+        
         if (encoded) {
-          existing.encodedAmount += amount;
           existing.encodedCount++;
         } else {
-          existing.onHandAmount += amount;
           existing.onHandCount++;
         }
       } else {
@@ -145,8 +208,8 @@ const Analytics = ({ currentUser }) => {
           encodedCount: encoded ? 1 : 0,
           onHandCount: encoded ? 0 : 1,
           totalAmount: amount,
-          encodedAmount: encoded ? amount : 0,
-          onHandAmount: encoded ? 0 : amount
+          encodedAmount: encodedAmount,
+          onHandAmount: onHandAmount
         });
       }
       return acc;
@@ -171,7 +234,27 @@ const Analytics = ({ currentUser }) => {
     });
   };
 
-  // Download PDF function - FIXED: Now properly uses autoTable
+  const toggleReferrorExpansion = (referrorName) => {
+    if (expandedReferror === referrorName) {
+      setExpandedReferror(null);
+    } else {
+      setExpandedReferror(referrorName);
+    }
+  };
+
+  const viewReferrorDetails = (referror) => {
+    const payinsForReferror = getPayinsForReferror(referror.name);
+    setSelectedReferrorDetails({
+      ...referror,
+      payins: payinsForReferror
+    });
+  };
+
+  const closeReferrorDetails = () => {
+    setSelectedReferrorDetails(null);
+  };
+
+  // Download PDF function
   const downloadPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -206,8 +289,9 @@ const Analytics = ({ currentUser }) => {
     const summaryData = [
       ['Total Payins', analytics.totalPayins.toString()],
       ['Total Amount', `₱${analytics.totalAmount.toLocaleString()}`],
-      ['Total Encoded', `₱${analytics.totalAmountEncoded.toLocaleString()}`],
-      ['Total On-Hand', `₱${analytics.totalAmountOnHand.toLocaleString()}`]
+      ['Total Encoded Amount', `₱${analytics.totalAmountEncoded.toLocaleString()}`],
+      ['Total Cash On-Hand', `₱${analytics.totalAmountOnHand.toLocaleString()}`],
+      ['Encoding Rate', `${analytics.totalAmount > 0 ? ((analytics.totalAmountEncoded / analytics.totalAmount) * 100).toFixed(1) : 0}%`]
     ];
     
     autoTable(doc, {
@@ -231,12 +315,13 @@ const Analytics = ({ currentUser }) => {
         ref.count.toString(),
         `₱${ref.totalAmount.toLocaleString()}`,
         `₱${ref.encodedAmount.toLocaleString()}`,
-        `₱${ref.onHandAmount.toLocaleString()}`
+        `₱${ref.onHandAmount.toLocaleString()}`,
+        `${ref.totalAmount > 0 ? ((ref.encodedAmount / ref.totalAmount) * 100).toFixed(1) : 0}%`
       ]);
       
       autoTable(doc, {
         startY: referrorY + 5,
-        head: [['Referror', 'Total Payins', 'Total Amount', 'Encoded Amount', 'On-Hand Amount']],
+        head: [['Referror', 'Total Payins', 'Total Amount', 'Encoded Amount', 'Cash On-Hand', 'Encoding %']],
         body: referrorData,
         theme: 'grid',
         headStyles: { fillColor: [59, 130, 246] },
@@ -256,12 +341,13 @@ const Analytics = ({ currentUser }) => {
         mentor.count.toString(),
         `₱${mentor.totalAmount.toLocaleString()}`,
         `₱${mentor.encodedAmount.toLocaleString()}`,
-        `₱${mentor.onHandAmount.toLocaleString()}`
+        `₱${mentor.onHandAmount.toLocaleString()}`,
+        `${mentor.totalAmount > 0 ? ((mentor.encodedAmount / mentor.totalAmount) * 100).toFixed(1) : 0}%`
       ]);
       
       autoTable(doc, {
         startY: mentorY + 5,
-        head: [['Mentor', 'Total Payins', 'Total Amount', 'Encoded Amount', 'On-Hand Amount']],
+        head: [['Mentor', 'Total Payins', 'Total Amount', 'Encoded Amount', 'Cash On-Hand', 'Encoding %']],
         body: mentorData,
         theme: 'grid',
         headStyles: { fillColor: [139, 92, 246] },
@@ -299,7 +385,8 @@ const Analytics = ({ currentUser }) => {
       ['Total Payins', analytics.totalPayins],
       ['Total Amount', analytics.totalAmount],
       ['Total Encoded Amount', analytics.totalAmountEncoded],
-      ['Total On-Hand Amount', analytics.totalAmountOnHand],
+      ['Total Cash On-Hand', analytics.totalAmountOnHand],
+      ['Encoding Rate', analytics.totalAmount > 0 ? ((analytics.totalAmountEncoded / analytics.totalAmount) * 100).toFixed(1) + '%' : '0%'],
       []
     ];
     
@@ -307,7 +394,7 @@ const Analytics = ({ currentUser }) => {
     const referrorData = [
       ['Performance by Referror'],
       [],
-      ['Referror', 'Total Payins', 'Total Amount', 'Encoded Amount', 'On-Hand Amount', 'Encoded Count', 'On-Hand Count']
+      ['Referror', 'Total Payins', 'Total Amount', 'Encoded Amount', 'Cash On-Hand', 'Encoded Count', 'On-Hand Count', 'Encoding %']
     ];
     
     analytics.byReferror.forEach(ref => {
@@ -318,7 +405,8 @@ const Analytics = ({ currentUser }) => {
         ref.encodedAmount,
         ref.onHandAmount,
         ref.encodedCount,
-        ref.onHandCount
+        ref.onHandCount,
+        ref.totalAmount > 0 ? ((ref.encodedAmount / ref.totalAmount) * 100).toFixed(1) + '%' : '0%'
       ]);
     });
     
@@ -326,7 +414,7 @@ const Analytics = ({ currentUser }) => {
     const mentorData = [
       ['Performance by Mentor'],
       [],
-      ['Mentor', 'Total Payins', 'Total Amount', 'Encoded Amount', 'On-Hand Amount', 'Encoded Count', 'On-Hand Count']
+      ['Mentor', 'Total Payins', 'Total Amount', 'Encoded Amount', 'Cash On-Hand', 'Encoded Count', 'On-Hand Count', 'Encoding %']
     ];
     
     analytics.byMentor.forEach(mentor => {
@@ -337,7 +425,8 @@ const Analytics = ({ currentUser }) => {
         mentor.encodedAmount,
         mentor.onHandAmount,
         mentor.encodedCount,
-        mentor.onHandCount
+        mentor.onHandCount,
+        mentor.totalAmount > 0 ? ((mentor.encodedAmount / mentor.totalAmount) * 100).toFixed(1) + '%' : '0%'
       ]);
     });
     
@@ -474,10 +563,10 @@ const Analytics = ({ currentUser }) => {
           transition={{ delay: 0.3 }}
           className="bg-gradient-to-br from-blue-900/20 to-blue-800/10 border border-blue-600/20 rounded-xl p-6"
         >
-          <p className="text-gray-400 text-sm mb-2">Total Amount (Encoded)</p>
+          <p className="text-gray-400 text-sm mb-2">Total Encoded Amount</p>
           <p className="text-4xl font-bold text-blue-400">₱{analytics.totalAmountEncoded.toLocaleString()}</p>
           <p className="text-sm text-gray-500 mt-2">
-            {analytics.totalPayins > 0 
+            {analytics.totalAmount > 0 
               ? `${((analytics.totalAmountEncoded / analytics.totalAmount) * 100).toFixed(1)}% of total`
               : 'No data'
             }
@@ -489,10 +578,10 @@ const Analytics = ({ currentUser }) => {
           transition={{ delay: 0.4 }}
           className="bg-gradient-to-br from-red-900/20 to-red-800/10 border border-red-600/20 rounded-xl p-6"
         >
-          <p className="text-gray-400 text-sm mb-2">Total Amount (On-Hand)</p>
+          <p className="text-gray-400 text-sm mb-2">Total Cash On-Hand</p>
           <p className="text-4xl font-bold text-red-400">₱{analytics.totalAmountOnHand.toLocaleString()}</p>
           <p className="text-sm text-gray-500 mt-2">
-            {analytics.totalPayins > 0 
+            {analytics.totalAmount > 0 
               ? `${((analytics.totalAmountOnHand / analytics.totalAmount) * 100).toFixed(1)}% of total`
               : 'No data'
             }
@@ -512,31 +601,117 @@ const Analytics = ({ currentUser }) => {
           <span className="text-sm text-gray-400">Sorted by highest total amount</span>
         </div>
         <div className="space-y-3">
-          {analytics.byReferror.map((ref, index) => (
-            <div key={index} className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white font-semibold">{ref.name}</span>
-                <span className="text-green-400 font-bold">₱{ref.totalAmount.toLocaleString()}</span>
+          {analytics.byReferror.map((ref, index) => {
+            const payinsForReferror = getPayinsForReferror(ref.name);
+            const isExpanded = expandedReferror === ref.name;
+            
+            return (
+              <div key={index} className="bg-gray-900/50 border border-gray-700 rounded-lg">
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-white font-semibold">{ref.name}</span>
+                      <button
+                        onClick={() => toggleReferrorExpansion(ref.name)}
+                        className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <ChevronUp className="w-4 h-4" />
+                            Hide Details
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4" />
+                            Show Details
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-green-400 font-bold">₱{ref.totalAmount.toLocaleString()}</span>
+                      <button
+                        onClick={() => viewReferrorDetails(ref)}
+                        className="flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-blue-900/30 to-blue-800/20 hover:from-blue-900/40 hover:to-blue-800/30 text-blue-400 border border-blue-600/30 rounded-md text-sm transition-all"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View All
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                    <div className="text-center">
+                      <p className="text-sm text-gray-400">Encoded Amount</p>
+                      <p className="text-lg font-bold text-blue-400">₱{ref.encodedAmount.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">
+                        {ref.encodedCount} payins • {ref.totalAmount > 0 ? `${((ref.encodedAmount/ref.totalAmount)*100).toFixed(0)}%` : '0%'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-400">Cash On-Hand</p>
+                      <p className="text-lg font-bold text-red-400">₱{ref.onHandAmount.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">
+                        {ref.onHandCount} payins • {ref.totalAmount > 0 ? `${((ref.onHandAmount/ref.totalAmount)*100).toFixed(0)}%` : '0%'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-400">Total Payins</p>
+                      <p className="text-lg font-bold text-yellow-400">{ref.count}</p>
+                      <p className="text-xs text-gray-500">All time</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded Payin Details */}
+                {isExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="overflow-hidden border-t border-gray-700"
+                  >
+                    <div className="p-4 bg-gray-950/50">
+                      <h4 className="text-lg font-semibold text-yellow-400 mb-3">Payin Details</h4>
+                      {payinsForReferror.length > 0 ? (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                          {payinsForReferror.map((payin, payinIndex) => (
+                            <div
+                              key={payinIndex}
+                              className="flex items-center justify-between p-3 bg-gray-800/30 border border-gray-700 rounded-lg"
+                            >
+                              <div>
+                                <p className="font-medium text-white">{payin.name}</p>
+                                <div className="flex gap-4 text-sm text-gray-400">
+                                  <span>Mentor: {payin.mentor}</span>
+                                  <span>Date: {payin.date}</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-bold text-yellow-400">₱{payin.amount}</p>
+                                <div className="flex items-center gap-2 text-sm">
+                                  {isPayinEncoded(payin) ? (
+                                    <>
+                                      <span className="text-green-400">Encoded</span>
+                                      <span className="text-xs text-gray-500">
+                                        ₱{getEncodedAmount(payin).toLocaleString()}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-red-400">Pending</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-center text-gray-500 py-4">No payin details available</p>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">Encoded Amount</p>
-                  <p className="text-lg font-bold text-blue-400">₱{ref.encodedAmount.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">{ref.encodedCount} payins ({ref.count > 0 ? `${((ref.encodedCount/ref.count)*100).toFixed(0)}%` : '0%'})</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">On-Hand Amount</p>
-                  <p className="text-lg font-bold text-red-400">₱{ref.onHandAmount.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">{ref.onHandCount} payins ({ref.count > 0 ? `${((ref.onHandCount/ref.count)*100).toFixed(0)}%` : '0%'})</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">Total Payins</p>
-                  <p className="text-lg font-bold text-yellow-400">{ref.count}</p>
-                  <p className="text-xs text-gray-500">All time</p>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {analytics.byReferror.length === 0 && (
             <p className="text-center text-gray-500 py-8">No data available</p>
           )}
@@ -552,36 +727,241 @@ const Analytics = ({ currentUser }) => {
       >
         <h2 className="text-2xl font-bold text-yellow-400 mb-4">Performance by Mentor</h2>
         <div className="space-y-3">
-          {analytics.byMentor.map((mentor, index) => (
-            <div key={index} className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white font-semibold">{mentor.name}</span>
-                <span className="text-purple-400 font-bold">₱{mentor.totalAmount.toLocaleString()}</span>
+          {analytics.byMentor.map((mentor, index) => {
+            const payinsForMentor = getPayinsForMentor(mentor.name);
+            const isExpanded = expandedReferror === `mentor-${mentor.name}`;
+            
+            return (
+              <div key={index} className="bg-gray-900/50 border border-gray-700 rounded-lg">
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-white font-semibold">{mentor.name}</span>
+                      <button
+                        onClick={() => toggleReferrorExpansion(`mentor-${mentor.name}`)}
+                        className="flex items-center gap-1 text-xs text-yellow-400 hover:text-yellow-300"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <ChevronUp className="w-4 h-4" />
+                            Hide Details
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4" />
+                            Show Details
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <span className="text-purple-400 font-bold">₱{mentor.totalAmount.toLocaleString()}</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                    <div className="text-center">
+                      <p className="text-sm text-gray-400">Encoded Amount</p>
+                      <p className="text-lg font-bold text-blue-400">₱{mentor.encodedAmount.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">
+                        {mentor.encodedCount} payins • {mentor.totalAmount > 0 ? `${((mentor.encodedAmount/mentor.totalAmount)*100).toFixed(0)}%` : '0%'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-400">Cash On-Hand</p>
+                      <p className="text-lg font-bold text-red-400">₱{mentor.onHandAmount.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">
+                        {mentor.onHandCount} payins • {mentor.totalAmount > 0 ? `${((mentor.onHandAmount/mentor.totalAmount)*100).toFixed(0)}%` : '0%'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-400">Total Payins</p>
+                      <p className="text-lg font-bold text-yellow-400">{mentor.count}</p>
+                      <p className="text-xs text-gray-500">All time</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded Payin Details for Mentor */}
+                {isExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="overflow-hidden border-t border-gray-700"
+                  >
+                    <div className="p-4 bg-gray-950/50">
+                      <h4 className="text-lg font-semibold text-yellow-400 mb-3">Payin Details</h4>
+                      {payinsForMentor.length > 0 ? (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                          {payinsForMentor.map((payin, payinIndex) => (
+                            <div
+                              key={payinIndex}
+                              className="flex items-center justify-between p-3 bg-gray-800/30 border border-gray-700 rounded-lg"
+                            >
+                              <div>
+                                <p className="font-medium text-white">{payin.name}</p>
+                                <div className="flex gap-4 text-sm text-gray-400">
+                                  <span>Referror: {payin.referror}</span>
+                                  <span>Date: {payin.date}</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-bold text-yellow-400">₱{payin.amount}</p>
+                                <div className="flex items-center gap-2 text-sm">
+                                  {isPayinEncoded(payin) ? (
+                                    <>
+                                      <span className="text-green-400">Encoded</span>
+                                      <span className="text-xs text-gray-500">
+                                        ₱{getEncodedAmount(payin).toLocaleString()}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-red-400">Pending</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-center text-gray-500 py-4">No payin details available</p>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">Encoded Amount</p>
-                  <p className="text-lg font-bold text-blue-400">₱{mentor.encodedAmount.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">{mentor.encodedCount} payins ({mentor.count > 0 ? `${((mentor.encodedCount/mentor.count)*100).toFixed(0)}` : '0'}%)</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">On-Hand Amount</p>
-                  <p className="text-lg font-bold text-red-400">₱{mentor.onHandAmount.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">{mentor.onHandCount} payins ({mentor.count > 0 ? `${((mentor.onHandCount/mentor.count)*100).toFixed(0)}` : '0'}%)</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">Total Payins</p>
-                  <p className="text-lg font-bold text-yellow-400">{mentor.count}</p>
-                  <p className="text-xs text-gray-500">All time</p>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {analytics.byMentor.length === 0 && (
             <p className="text-center text-gray-500 py-8">No data available</p>
           )}
         </div>
       </motion.div>
+
+      {/* Referror Details Modal */}
+      {selectedReferrorDetails && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/30 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden"
+          >
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-yellow-400">
+                    {selectedReferrorDetails.name} - Payin Details
+                  </h2>
+                  <p className="text-gray-400">
+                    Total: ₱{selectedReferrorDetails.totalAmount.toLocaleString()} • 
+                    {selectedReferrorDetails.count} payins
+                  </p>
+                </div>
+                <button
+                  onClick={closeReferrorDetails}
+                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6 text-gray-400" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-gray-900/50 p-4 rounded-lg border border-blue-600/30">
+                  <p className="text-sm text-gray-400">Encoded Amount</p>
+                  <p className="text-2xl font-bold text-blue-400">
+                    ₱{selectedReferrorDetails.encodedAmount.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {selectedReferrorDetails.encodedCount} payins encoded
+                  </p>
+                </div>
+                <div className="bg-gray-900/50 p-4 rounded-lg border border-red-600/30">
+                  <p className="text-sm text-gray-400">Cash On-Hand</p>
+                  <p className="text-2xl font-bold text-red-400">
+                    ₱{selectedReferrorDetails.onHandAmount.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {selectedReferrorDetails.onHandCount} payins pending
+                  </p>
+                </div>
+                <div className="bg-gray-900/50 p-4 rounded-lg border border-yellow-600/30">
+                  <p className="text-sm text-gray-400">Encoding Rate</p>
+                  <p className="text-2xl font-bold text-yellow-400">
+                    {selectedReferrorDetails.totalAmount > 0 
+                      ? `${((selectedReferrorDetails.encodedAmount / selectedReferrorDetails.totalAmount) * 100).toFixed(1)}%`
+                      : '0%'
+                    }
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    of total amount encoded
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-white mb-3">All Payins</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-700">
+                        <th className="text-left py-3 px-4 text-yellow-400 font-semibold">Name</th>
+                        <th className="text-left py-3 px-4 text-yellow-400 font-semibold">Amount</th>
+                        <th className="text-left py-3 px-4 text-yellow-400 font-semibold">Mentor</th>
+                        <th className="text-left py-3 px-4 text-yellow-400 font-semibold">Date</th>
+                        <th className="text-left py-3 px-4 text-yellow-400 font-semibold">Status</th>
+                        <th className="text-left py-3 px-4 text-yellow-400 font-semibold">Encoded Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedReferrorDetails.payins.map((payin, index) => (
+                        <tr key={index} className="border-b border-gray-800 hover:bg-gray-800/30">
+                          <td className="py-3 px-4 text-white font-medium">{payin.name}</td>
+                          <td className="py-3 px-4">
+                            <span className="text-yellow-400 font-bold">₱{payin.amount}</span>
+                          </td>
+                          <td className="py-3 px-4 text-gray-300">{payin.mentor}</td>
+                          <td className="py-3 px-4 text-gray-400">{payin.date}</td>
+                          <td className="py-3 px-4">
+                            {isPayinEncoded(payin) ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/30 text-green-400 rounded-full text-xs">
+                                <Eye className="w-3 h-3" />
+                                Encoded
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-900/30 text-red-400 rounded-full text-xs">
+                                <Eye className="w-3 h-3" />
+                                Pending
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            {isPayinEncoded(payin) ? (
+                              <span className="text-blue-400 font-medium">
+                                ₱{getEncodedAmount(payin).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-gray-500">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {selectedReferrorDetails.payins.length === 0 && (
+                    <p className="text-center text-gray-500 py-8">No payins found</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
+                <button
+                  onClick={closeReferrorDetails}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };
