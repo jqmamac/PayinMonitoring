@@ -27,8 +27,6 @@ const PayinManager = ({ currentUser, roles }) => {
       setPayins(loadedPayins);
     });
 
-    // Fetch Referrors and Mentors for filtering/display logic if needed
-    // (Also passed to Dialog, but good to have here for robust filtering if we filter by IDs later)
     const referrorsRef = ref(db, 'referrors');
     const unsubReferrors = onValue(referrorsRef, (snapshot) => {
         const data = snapshot.val();
@@ -172,6 +170,21 @@ const PayinManager = ({ currentUser, roles }) => {
     });
   };
 
+  // Helper function to get display amount
+  const getDisplayAmount = (payin) => {
+    if (payin.isEncoded && payin.encodedAmount) {
+      return (
+        <div className="flex flex-col">
+          <span className="text-green-400 font-bold">₱{payin.encodedAmount}</span>
+          {payin.encodedAmount !== payin.amount && (
+            <span className="text-xs text-gray-500 line-through">₱{payin.amount}</span>
+          )}
+        </div>
+      );
+    }
+    return <span className="text-yellow-400 font-bold">₱{payin.amount}</span>;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -212,10 +225,11 @@ const PayinManager = ({ currentUser, roles }) => {
               <tr className="border-b border-gray-700">
                 <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Name</th>
                 <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Amount</th>
+                <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Encoded Amount</th>
                 <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Referror</th>
                 <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Mentor</th>
                 <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Date</th>
-                <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Encoded</th>
+                <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Status</th>
                 {(hasPermission(currentUser, PERMISSIONS.PAYIN_EDIT, roles) || hasPermission(currentUser, PERMISSIONS.PAYIN_DELETE, roles)) && (
                   <th className="text-left py-4 px-4 text-yellow-400 font-semibold">Actions</th>
                 )}
@@ -231,7 +245,21 @@ const PayinManager = ({ currentUser, roles }) => {
                   className="border-b border-gray-800 hover:bg-gray-800/50 transition-all"
                 >
                   <td className="py-4 px-4 text-white font-medium">{payin.name}</td>
-                  <td className="py-4 px-4 text-green-400 font-bold">₱{payin.amount}</td>
+                  <td className="py-4 px-4">
+                    <span className="text-yellow-400 font-bold">₱{payin.amount}</span>
+                  </td>
+                  <td className="py-4 px-4">
+                    {payin.isEncoded ? (
+                      <div className="flex flex-col">
+                        <span className="text-green-400 font-bold">₱{payin.encodedAmount || payin.amount}</span>
+                        {payin.encodedAmount && payin.encodedAmount !== payin.amount && (
+                          <span className="text-xs text-gray-500">Partial encoding</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-500">Not encoded</span>
+                    )}
+                  </td>
                   <td className="py-4 px-4 text-gray-300">{payin.referror}</td>
                   <td className="py-4 px-4 text-gray-300">{payin.mentor}</td>
                   <td className="py-4 px-4 text-gray-400">{payin.date}</td>
@@ -240,14 +268,14 @@ const PayinManager = ({ currentUser, roles }) => {
                       <div className="flex flex-col">
                         <div className="flex items-center text-green-400 gap-1">
                           <CheckCircle className="w-4 h-4" />
-                          <span className="text-xs">Yes</span>
+                          <span className="text-xs">Encoded</span>
                         </div>
                         <span className="text-xs text-gray-500">{payin.encodedDate}</span>
                       </div>
                     ) : (
                       <div className="flex items-center text-gray-500 gap-1">
                         <XCircle className="w-4 h-4" />
-                        <span className="text-xs">No</span>
+                        <span className="text-xs">Pending</span>
                       </div>
                     )}
                   </td>
