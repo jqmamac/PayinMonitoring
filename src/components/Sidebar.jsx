@@ -1,4 +1,4 @@
-// src/components/Sidebar.jsx - Clean version without login/logout button
+// src/components/Sidebar.jsx
 import React from 'react';
 import { 
   LayoutDashboard, DollarSign, Users, UserCog, BarChart3, 
@@ -23,24 +23,24 @@ const Sidebar = ({
     { id: 'payins', label: 'Payins', icon: DollarSign, show: !isGuest, shortLabel: '$' },
     { id: 'referrors', label: 'Referrors', icon: Users, show: !isGuest, shortLabel: 'Ref' },
     { id: 'mentors', label: 'Mentors', icon: UserCog, show: !isGuest, shortLabel: 'Ment' },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3, show: hasPermission(currentUser, PERMISSIONS.VIEW_ANALYTICS, roles), shortLabel: 'Stats' },
-    { id: 'audit', label: 'Audit', icon: FileText, show: hasPermission(currentUser, PERMISSIONS.VIEW_AUDIT, roles), shortLabel: 'Audit' },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, show: !isGuest && hasPermission(currentUser, PERMISSIONS.VIEW_ANALYTICS, roles), shortLabel: 'Stats' },
+    { id: 'audit', label: 'Audit', icon: FileText, show: !isGuest && hasPermission(currentUser, PERMISSIONS.VIEW_AUDIT, roles), shortLabel: 'Audit' },
     { 
       id: 'users', 
       label: 'Users', 
       icon: UserCheck, 
-      show: hasPermission(currentUser, PERMISSIONS.USER_ADD, roles) || 
+      show: !isGuest && (hasPermission(currentUser, PERMISSIONS.USER_ADD, roles) || 
             hasPermission(currentUser, PERMISSIONS.USER_EDIT, roles) || 
-            hasPermission(currentUser, PERMISSIONS.USER_DELETE, roles),
+            hasPermission(currentUser, PERMISSIONS.USER_DELETE, roles)),
       shortLabel: 'Users'
     },
     { 
       id: 'roles', 
       label: 'Roles', 
       icon: Lock, 
-      show: hasPermission(currentUser, PERMISSIONS.ROLE_ADD, roles) || 
+      show: !isGuest && (hasPermission(currentUser, PERMISSIONS.ROLE_ADD, roles) || 
             hasPermission(currentUser, PERMISSIONS.ROLE_EDIT, roles) || 
-            hasPermission(currentUser, PERMISSIONS.ROLE_DELETE, roles),
+            hasPermission(currentUser, PERMISSIONS.ROLE_DELETE, roles)),
       shortLabel: 'Roles'
     },
   ];
@@ -100,7 +100,7 @@ const Sidebar = ({
             </div>
           ) : (
             <div className="text-xs text-gray-500">
-              PayinMonitor v1.8
+              PayinMonitor v1.0.5
             </div>
           )}
         </div>

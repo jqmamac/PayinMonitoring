@@ -1,8 +1,9 @@
 // src/layouts/MainLayout.jsx
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, User, Shield, ChevronLeft, LogOut, LogIn } from 'lucide-react';
+import { Menu, X, User, ChevronLeft, LogOut, LogIn } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
+import logo from '@/logo.png'; // Import your logo
 
 // Inline media query hook
 const useMediaQuery = (query) => {
@@ -132,19 +133,23 @@ const MainLayout = ({ children, currentView, setCurrentView, currentUser, onLogo
               </button>
             )}
 
-            {/* Logo/Brand */}
+            {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-yellow-500 to-yellow-700 p-2 rounded-lg">
-                <Shield className="w-6 h-6 text-black" />
-              </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
-                {isMobile ? 'PM' : 'PayinMonitor'}
-              </span>
+              <img 
+                src={logo}
+                alt="PayinMonitor Logo"
+                className="h-10 w-auto object-contain"
+              />
+              {!isMobile && (
+                <span className="text-xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
+                  PayinMonitor
+                </span>
+              )}
             </div>
 
             {/* Page Title (Desktop) */}
             {!isMobile && (
-              <div className="ml-6">
+              <div className="ml-6 border-l border-gray-700 pl-6">
                 <h1 className="text-lg font-semibold capitalize">
                   {currentView.replace(/([A-Z])/g, ' $1').trim()}
                 </h1>
@@ -152,7 +157,7 @@ const MainLayout = ({ children, currentView, setCurrentView, currentUser, onLogo
             )}
           </div>
 
-          {/* Right Section - User Menu Only */}
+          {/* Right Section - User Menu */}
           <div className="user-menu-container relative">
             <button
               onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
@@ -200,25 +205,13 @@ const MainLayout = ({ children, currentView, setCurrentView, currentUser, onLogo
                         <span>Login</span>
                       </button>
                     ) : (
-                      <>
-                        <button
-                          onClick={() => {
-                            handleSetCurrentView('dashboard');
-                            setIsUserMenuOpen(false);
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-yellow-400 transition-colors"
-                        >
-                          <User className="w-4 h-4" />
-                          <span>My Profile</span>
-                        </button>
-                        <button
-                          onClick={() => handleUserAction('logout')}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-900/30 transition-colors"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span>Logout</span>
-                        </button>
-                      </>
+                      <button
+                        onClick={() => handleUserAction('logout')}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-900/30 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Logout</span>
+                      </button>
                     )}
                   </div>
                 </motion.div>
