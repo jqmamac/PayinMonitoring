@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Edit2, Trash2, Search, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, CheckCircle, XCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import PayinDialog from '@/components/PayinDialog';
@@ -17,6 +17,11 @@ const PayinManager = ({ currentUser, roles }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPayin, setEditingPayin] = useState(null);
   const { toast } = useToast();
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     // Listen for Payins
@@ -50,6 +55,17 @@ const PayinManager = ({ currentUser, roles }) => {
     filterPayins();
   }, [searchTerm, payins]);
 
+  // Calculate pagination when filteredPayins changes
+  useEffect(() => {
+    const total = Math.ceil(filteredPayins.length / itemsPerPage);
+    setTotalPages(total);
+    
+    // If current page is greater than total pages after filtering, reset to page 1
+    if (currentPage > total && total > 0) {
+      setCurrentPage(1);
+    }
+  }, [filteredPayins, itemsPerPage]);
+
   const filterPayins = () => {
     if (!searchTerm) {
       setFilteredPayins(payins);
@@ -61,6 +77,67 @@ const PayinManager = ({ currentUser, roles }) => {
       );
       setFilteredPayins(filtered);
     }
+  };
+
+  // Get current items for the page
+  const getCurrentItems = () => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredPayins.slice(startIndex, endIndex);
+  };
+
+  // Handle page change
+  const handlePageChange = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  // Handle items per page change
+  const handleItemsPerPageChange = (value) => {
+    const newItemsPerPage = parseInt(value);
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // Reset to first page when changing items per page
+    
+    toast({
+      title: "Display Updated",
+      description: `Showing ${newItemsPerPage} items per page`,
+    });
+  };
+
+  // Generate page numbers for pagination
+  const getPageNumbers = () => {
+    const pageNumbers = [];
+    const maxPagesToShow = 5;
+    
+    if (totalPages <= maxPagesToShow) {
+      // Show all pages
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      // Show limited pages with ellipsis
+      const startPage = Math.max(2, currentPage - 1);
+      const endPage = Math.min(totalPages - 1, currentPage + 1);
+      
+      pageNumbers.push(1);
+      
+      if (startPage > 2) {
+        pageNumbers.push('...');
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+      }
+      
+      if (endPage < totalPages - 1) {
+        pageNumbers.push('...');
+      }
+      
+      pageNumbers.push(totalPages);
+    }
+    
+    return pageNumbers;
   };
 
   const handleSavePayin = async (payinData) => {
@@ -185,6 +262,17 @@ const PayinManager = ({ currentUser, roles }) => {
     return <span className="text-yellow-400 font-bold">₱{payin.amount}</span>;
   };
 
+  // Format date for better display
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -219,6 +307,32 @@ const PayinManager = ({ currentUser, roles }) => {
           </div>
         </div>
 
+        {/* Pagination Controls - Top */}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+          <div className="text-sm text-emerald-300">
+            Showing <span className="font-bold text-amber-300">{getCurrentItems().length}</span> of{' '}
+            <span className="font-bold text-amber-300">{filteredPayins.length}</span> payins
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-emerald-300 whitespace-nowrap">Show:</label>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(e.target.value)}
+                className="bg-emerald-900/50 border border-amber-400/30 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              >
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span className="text-sm text-emerald-300">per page</span>
+            </div>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -236,7 +350,7 @@ const PayinManager = ({ currentUser, roles }) => {
               </tr>
             </thead>
             <tbody>
-              {filteredPayins.map((payin, index) => (
+              {getCurrentItems().map((payin, index) => (
                 <motion.tr
                   key={payin.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -313,6 +427,81 @@ const PayinManager = ({ currentUser, roles }) => {
             </div>
           )}
         </div>
+
+        {/* Pagination Controls - Bottom */}
+        {filteredPayins.length > 0 && (
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-6 border-t border-emerald-700/30">
+            <div className="text-sm text-emerald-300">
+              Page <span className="font-bold text-amber-300">{currentPage}</span> of{' '}
+              <span className="font-bold text-amber-300">{totalPages}</span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* First Page Button */}
+              <Button
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-2 bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-200 border border-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+                size="sm"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </Button>
+              
+              {/* Previous Page Button */}
+              <Button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-2 bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-200 border border-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+                size="sm"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              
+              {/* Page Numbers */}
+              <div className="flex gap-1">
+                {getPageNumbers().map((page, index) => (
+                  <React.Fragment key={index}>
+                    {page === '...' ? (
+                      <span className="px-3 py-2 text-emerald-400">...</span>
+                    ) : (
+                      <Button
+                        onClick={() => handlePageChange(page)}
+                        className={`px-3 py-2 min-w-[40px] ${
+                          currentPage === page
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white font-bold'
+                            : 'bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-200'
+                        } border border-emerald-700/50 rounded-lg`}
+                        size="sm"
+                      >
+                        {page}
+                      </Button>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+              
+              {/* Next Page Button */}
+              <Button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-200 border border-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+                size="sm"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+              
+              {/* Last Page Button */}
+              <Button
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-200 border border-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+                size="sm"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <PayinDialog
