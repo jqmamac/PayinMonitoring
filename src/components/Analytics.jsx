@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   BarChart3, Calendar, TrendingUp, Filter, Download, 
-  FileText, FileSpreadsheet, Eye, ChevronDown, ChevronUp, X 
+  FileText, FileSpreadsheet, Eye, ChevronDown, ChevronUp, X,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
@@ -31,6 +32,11 @@ const Analytics = ({ currentUser }) => {
   const [expandedReferror, setExpandedReferror] = useState(null);
   const [selectedReferrorDetails, setSelectedReferrorDetails] = useState(null);
 
+  // Pagination state for By Referror section
+  const [referrorCurrentPage, setReferrorCurrentPage] = useState(1);
+  const [referrorItemsPerPage, setReferrorItemsPerPage] = useState(5);
+  const [referrorTotalPages, setReferrorTotalPages] = useState(1);
+
   useEffect(() => {
     const payinsRef = ref(db, 'payins');
     const referrorsRef = ref(db, 'referrors');
@@ -57,11 +63,74 @@ const Analytics = ({ currentUser }) => {
     calculateAnalytics();
   }, [filters, payins]);
 
+  // Calculate pagination for referror section
+  useEffect(() => {
+    const total = Math.ceil(analytics.byReferror.length / referrorItemsPerPage);
+    setReferrorTotalPages(total);
+    
+    if (referrorCurrentPage > total && total > 0) {
+      setReferrorCurrentPage(1);
+    }
+  }, [analytics.byReferror, referrorItemsPerPage]);
+
+  // Get current referror items for the page
+  const getCurrentReferrorItems = () => {
+    const startIndex = (referrorCurrentPage - 1) * referrorItemsPerPage;
+    const endIndex = startIndex + referrorItemsPerPage;
+    return analytics.byReferror.slice(startIndex, endIndex);
+  };
+
+  // Handle referror page change
+  const handleReferrorPageChange = (page) => {
+    if (page >= 1 && page <= referrorTotalPages) {
+      setReferrorCurrentPage(page);
+    }
+  };
+
+  // Handle referror items per page change
+  const handleReferrorItemsPerPageChange = (value) => {
+    const newItemsPerPage = parseInt(value);
+    setReferrorItemsPerPage(newItemsPerPage);
+    setReferrorCurrentPage(1);
+  };
+
+  // Generate page numbers for referror pagination
+  const getReferrorPageNumbers = () => {
+    const pageNumbers = [];
+    const maxPagesToShow = 5;
+    
+    if (referrorTotalPages <= maxPagesToShow) {
+      for (let i = 1; i <= referrorTotalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      const startPage = Math.max(2, referrorCurrentPage - 1);
+      const endPage = Math.min(referrorTotalPages - 1, referrorCurrentPage + 1);
+      
+      pageNumbers.push(1);
+      
+      if (startPage > 2) {
+        pageNumbers.push('...');
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+      }
+      
+      if (endPage < referrorTotalPages - 1) {
+        pageNumbers.push('...');
+      }
+      
+      pageNumbers.push(referrorTotalPages);
+    }
+    
+    return pageNumbers;
+  };
+
   // Function to check if a payin is encoded
   const isPayinEncoded = (payin) => {
     if (!payin) return false;
     
-    // Check the isEncoded field directly
     if (payin.isEncoded === true || payin.isEncoded === 'true' || payin.isEncoded === 'True') {
       return true;
     }
@@ -73,12 +142,10 @@ const Analytics = ({ currentUser }) => {
   const getEncodedAmount = (payin) => {
     if (!isPayinEncoded(payin)) return 0;
     
-    // Use encodedAmount if available, otherwise use amount for old data
     if (payin.encodedAmount !== undefined && payin.encodedAmount !== '') {
       return parseFloat(payin.encodedAmount || 0);
     }
     
-    // For old data without encodedAmount field
     return parseFloat(payin.amount || 0);
   };
 
@@ -144,7 +211,6 @@ const Analytics = ({ currentUser }) => {
     }, 0);
     
     // Calculate on-hand amount (total amount - encoded amount)
-    // This includes partial amounts automatically
     const totalAmountOnHand = totalAmount - totalAmountEncoded;
 
     // Group by referror
@@ -179,7 +245,7 @@ const Analytics = ({ currentUser }) => {
         });
       }
       return acc;
-    }, []).sort((a, b) => b.totalAmount - a.totalAmount); // Sort by highest total amount
+    }, []).sort((a, b) => b.totalAmount - a.totalAmount);
 
     // Group by mentor
     const byMentor = filteredPayins.reduce((acc, p) => {
@@ -589,7 +655,7 @@ const Analytics = ({ currentUser }) => {
         </motion.div>
       </div>
 
-      {/* By Referror */}
+      {/* By Referror with Pagination */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -600,8 +666,34 @@ const Analytics = ({ currentUser }) => {
           <h2 className="text-2xl font-bold text-yellow-400">Performance by Referror</h2>
           <span className="text-sm text-gray-400">Sorted by highest total amount</span>
         </div>
+
+        {/* Pagination Controls - Top */}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+          <div className="text-sm text-gray-400">
+            Showing <span className="font-bold text-yellow-400">{getCurrentReferrorItems().length}</span> of{' '}
+            <span className="font-bold text-yellow-400">{analytics.byReferror.length}</span> referrors
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-400 whitespace-nowrap">Show:</label>
+              <select
+                value={referrorItemsPerPage}
+                onChange={(e) => handleReferrorItemsPerPageChange(e.target.value)}
+                className="bg-gray-900 border border-yellow-600/30 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-yellow-500"
+              >
+                <option value="3">3</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+              </select>
+              <span className="text-sm text-gray-400">per page</span>
+            </div>
+          </div>
+        </div>
+
         <div className="space-y-3">
-          {analytics.byReferror.map((ref, index) => {
+          {getCurrentReferrorItems().map((ref, index) => {
             const payinsForReferror = getPayinsForReferror(ref.name);
             const isExpanded = expandedReferror === ref.name;
             
@@ -712,13 +804,83 @@ const Analytics = ({ currentUser }) => {
               </div>
             );
           })}
-          {analytics.byReferror.length === 0 && (
+          {getCurrentReferrorItems().length === 0 && (
             <p className="text-center text-gray-500 py-8">No data available</p>
           )}
         </div>
+
+        {/* Pagination Controls - Bottom */}
+        {analytics.byReferror.length > 0 && (
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-6 border-t border-gray-700">
+            <div className="text-sm text-gray-400">
+              Page <span className="font-bold text-yellow-400">{referrorCurrentPage}</span> of{' '}
+              <span className="font-bold text-yellow-400">{referrorTotalPages}</span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* First Page Button */}
+              <button
+                onClick={() => handleReferrorPageChange(1)}
+                disabled={referrorCurrentPage === 1}
+                className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+              
+              {/* Previous Page Button */}
+              <button
+                onClick={() => handleReferrorPageChange(referrorCurrentPage - 1)}
+                disabled={referrorCurrentPage === 1}
+                className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              
+              {/* Page Numbers */}
+              <div className="flex gap-1">
+                {getReferrorPageNumbers().map((page, index) => (
+                  <React.Fragment key={index}>
+                    {page === '...' ? (
+                      <span className="px-3 py-2 text-gray-500">...</span>
+                    ) : (
+                      <button
+                        onClick={() => handleReferrorPageChange(page)}
+                        className={`px-3 py-2 min-w-[40px] ${
+                          referrorCurrentPage === page
+                            ? 'bg-gradient-to-r from-yellow-500 to-yellow-700 text-black font-bold'
+                            : 'bg-gray-800 hover:bg-gray-700 text-gray-200'
+                        } border border-gray-600 rounded-lg transition-colors`}
+                      >
+                        {page}
+                      </button>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+              
+              {/* Next Page Button */}
+              <button
+                onClick={() => handleReferrorPageChange(referrorCurrentPage + 1)}
+                disabled={referrorCurrentPage === referrorTotalPages}
+                className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              
+              {/* Last Page Button */}
+              <button
+                onClick={() => handleReferrorPageChange(referrorTotalPages)}
+                disabled={referrorCurrentPage === referrorTotalPages}
+                className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </motion.div>
 
-      {/* By Mentor */}
+      {/* By Mentor (No pagination) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
