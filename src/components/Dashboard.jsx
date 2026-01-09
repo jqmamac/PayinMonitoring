@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   DollarSign, Users, UserCog, TrendingUp, AlertCircle, 
   Trophy, Crown, Calendar, Filter, X, ChevronDown, ChevronUp,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, SlidersHorizontal, Eye
 } from 'lucide-react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
 
+// CalendarPicker component remains the same
 const CalendarPicker = ({ selectedDate, onDateSelect, label, maxDate, minDate }) => {
   const [showCalendar, setShowCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -79,7 +80,7 @@ const CalendarPicker = ({ selectedDate, onDateSelect, label, maxDate, minDate })
     }
     
     // Next month days
-    const totalCells = 42; // 6 weeks * 7 days
+    const totalCells = 42;
     const nextMonthDays = totalCells - days.length;
     
     for (let day = 1; day <= nextMonthDays; day++) {
@@ -208,6 +209,60 @@ const CalendarPicker = ({ selectedDate, onDateSelect, label, maxDate, minDate })
   );
 };
 
+// Top Performers Count Selector Component
+const TopPerformersSelector = ({ count, onChange, maxCount = 20 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectorRef = useRef(null);
+
+  const options = [5, 10, 15, 20];
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (selectorRef.current && !selectorRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative" ref={selectorRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-white transition-colors"
+      >
+        <Eye className="w-4 h-4" />
+        <span>Top {count}</span>
+        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-40 bg-gray-800 border border-yellow-600/30 rounded-lg shadow-xl overflow-hidden">
+          <div className="py-1">
+            {options.map((option) => (
+              <button
+                key={option}
+                onClick={() => {
+                  onChange(option);
+                  setIsOpen(false);
+                }}
+                className={`w-full px-4 py-2 text-left text-sm transition-colors ${
+                  count === option
+                    ? 'bg-yellow-500/20 text-yellow-400 font-medium'
+                    : 'text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Top {option} Performers
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Dashboard = ({ currentUser }) => {
   const [stats, setStats] = useState({
     totalPayins: 0,
@@ -222,11 +277,13 @@ const Dashboard = ({ currentUser }) => {
     startDate: '',
     endDate: ''
   });
+  
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [allPayins, setAllPayins] = useState([]);
   const [referrorsCount, setReferrorsCount] = useState(0);
   const [mentorsCount, setMentorsCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [topPerformersCount, setTopPerformersCount] = useState(5);
 
   // Initialize with all data on first load
   useEffect(() => {
@@ -274,12 +331,12 @@ const Dashboard = ({ currentUser }) => {
     };
   }, []);
 
-  // Also update stats when dateRange changes
+  // Update stats when dateRange or topPerformersCount changes
   useEffect(() => {
     if (allPayins.length > 0) {
       calculateAndSetStats(allPayins, referrorsCount, mentorsCount);
     }
-  }, [dateRange, allPayins, referrorsCount, mentorsCount]);
+  }, [dateRange, topPerformersCount, allPayins, referrorsCount, mentorsCount]);
 
   const getTodayDate = () => {
     return new Date().toISOString().split('T')[0];
@@ -322,9 +379,11 @@ const Dashboard = ({ currentUser }) => {
     setDateRange({ startDate, endDate });
   };
 
-  const calculateTopPerformers = (payins, startDate = null, endDate = null) => {
+  // Calculate top performers based on date filter
+  const calculateTopPerformers = useCallback((payins, startDate = null, endDate = null) => {
     let filteredPayins = [...payins];
     
+    // Apply date filter if set
     if (startDate) {
       filteredPayins = filteredPayins.filter(p => p.date >= startDate);
     }
@@ -354,39 +413,51 @@ const Dashboard = ({ currentUser }) => {
       }
     });
     
+    // Sort by totalAmount and take top N performers
     const performers = Array.from(referrorMap.values())
       .sort((a, b) => b.totalAmount - a.totalAmount)
-      .slice(0, 5);
+      .slice(0, topPerformersCount);
     
     return performers;
-  };
+  }, [topPerformersCount]);
+
+  // Calculate total amount from all payins (unfiltered)
+  const calculateTotalAmount = useCallback((payins) => {
+    return payins.reduce((sum, payin) => sum + parseFloat(payin.amount || 0), 0);
+  }, []);
 
   // Main function to calculate and set stats
-  const calculateAndSetStats = (payins, refCount, menCount) => {
-    let filteredPayins = [...payins];
+  const calculateAndSetStats = useCallback((payins, refCount, menCount) => {
+    // Total Amount and Total Payins always show ALL data (unfiltered)
+    const totalAmount = calculateTotalAmount(payins);
+    const totalPayins = payins.length;
     
-    // Apply date filter if set
+    // Recent payins show filtered data if date filter is applied
+    let recentPayins = [...payins];
     if (dateRange.startDate) {
-      filteredPayins = filteredPayins.filter(p => p.date >= dateRange.startDate);
+      recentPayins = recentPayins.filter(p => p.date >= dateRange.startDate);
+    }
+    if (dateRange.endDate) {
+      recentPayins = recentPayins.filter(p => p.date <= dateRange.endDate);
     }
     
-    if (dateRange.endDate) {
-      filteredPayins = filteredPayins.filter(p => p.date <= dateRange.endDate);
-    }
-
-    const totalAmount = filteredPayins.reduce((sum, payin) => sum + parseFloat(payin.amount || 0), 0);
-    const recentPayins = [...filteredPayins].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+    // Sort by date and take top 5
+    const recentFilteredPayins = [...recentPayins]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 5);
+    
+    // Top performers use the date filter
     const topPerformers = calculateTopPerformers(payins, dateRange.startDate, dateRange.endDate);
 
     setStats({
-      totalPayins: filteredPayins.length,
-      totalAmount,
+      totalPayins, // Always ALL payins
+      totalAmount, // Always ALL amount
       activeReferrors: refCount,
       activeMentors: menCount,
-      recentPayins,
+      recentPayins: recentFilteredPayins,
       topPerformers
     });
-  };
+  }, [dateRange, calculateTopPerformers, calculateTotalAmount]);
 
   const handleDateRangeChange = () => {
     calculateAndSetStats(allPayins, referrorsCount, mentorsCount);
@@ -395,7 +466,6 @@ const Dashboard = ({ currentUser }) => {
 
   const resetDateRange = () => {
     setDateRange({ startDate: '', endDate: '' });
-    // This will trigger the useEffect that watches dateRange
   };
 
   const statCards = [
@@ -404,16 +474,14 @@ const Dashboard = ({ currentUser }) => {
       value: stats.totalPayins,
       icon: DollarSign,
       gradient: 'from-yellow-500 to-yellow-700',
-      bgGradient: 'from-yellow-900/20 to-yellow-800/10',
-      filtered: dateRange.startDate || dateRange.endDate
+      bgGradient: 'from-yellow-900/20 to-yellow-800/10'
     },
     {
       title: 'Total Amount',
       value: `₱${stats.totalAmount.toLocaleString()}`,
       icon: TrendingUp,
       gradient: 'from-green-500 to-green-700',
-      bgGradient: 'from-green-900/20 to-green-800/10',
-      filtered: dateRange.startDate || dateRange.endDate
+      bgGradient: 'from-green-900/20 to-green-800/10'
     },
     {
       title: 'Active Referrors',
@@ -456,7 +524,7 @@ const Dashboard = ({ currentUser }) => {
             className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-700 hover:from-yellow-600 hover:to-yellow-800 text-black font-bold rounded-md flex items-center gap-2 transition-all"
           >
             <Calendar className="w-4 h-4" />
-            {dateRange.startDate || dateRange.endDate ? 'Adjust Date Range' : 'Filter by Date'}
+            {dateRange.startDate || dateRange.endDate ? 'Adjust Date Range' : 'Filter Top Performers'}
           </button>
         </div>
       </div>
@@ -471,7 +539,7 @@ const Dashboard = ({ currentUser }) => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Filter className="w-5 h-5 text-yellow-400" />
-              <h2 className="text-xl font-bold text-white">Filter by Date Range</h2>
+              <h2 className="text-xl font-bold text-white">Filter Top Performers by Date</h2>
             </div>
             <button
               onClick={() => setShowDateFilter(false)}
@@ -483,7 +551,7 @@ const Dashboard = ({ currentUser }) => {
           
           {/* Quick Date Presets */}
           <div className="mb-6">
-            <h3 className="text-sm text-gray-400 mb-2">Quick Presets</h3>
+            <h3 className="text-sm text-gray-400 mb-2">Quick Date Presets</h3>
             <div className="flex flex-wrap gap-2">
               {[
                 { label: 'Today', preset: 'today' },
@@ -524,7 +592,7 @@ const Dashboard = ({ currentUser }) => {
           {(dateRange.startDate || dateRange.endDate) && (
             <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-600/30 rounded-lg">
               <p className="text-sm text-yellow-400">
-                Selected: {dateRange.startDate 
+                {dateRange.startDate 
                   ? new Date(dateRange.startDate).toLocaleDateString('en-US', { 
                       year: 'numeric', 
                       month: 'short', 
@@ -547,7 +615,7 @@ const Dashboard = ({ currentUser }) => {
               onClick={resetDateRange}
               className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex-1"
             >
-              Reset
+              Reset Filter
             </button>
             <button
               onClick={handleDateRangeChange}
@@ -559,7 +627,7 @@ const Dashboard = ({ currentUser }) => {
         </motion.div>
       )}
 
-      {/* Filter Status Banner */}
+      {/* Filter Status Banner - Only for Top Performers */}
       {(dateRange.startDate || dateRange.endDate) && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -570,11 +638,11 @@ const Dashboard = ({ currentUser }) => {
             <div className="flex items-center gap-3">
               <Filter className="w-5 h-5 text-blue-400" />
               <div>
-                <p className="text-blue-400 font-medium">Active Date Filter</p>
+                <p className="text-blue-400 font-medium">Top Performers Date Filter Active</p>
                 <p className="text-sm text-gray-400">
                   {dateRange.startDate 
-                    ? `From ${new Date(dateRange.startDate).toLocaleDateString()}`
-                    : 'From Beginning'}
+                    ? new Date(dateRange.startDate).toLocaleDateString()
+                    : 'Beginning'}
                   {dateRange.endDate 
                     ? ` to ${new Date(dateRange.endDate).toLocaleDateString()}`
                     : ' to Present'}
@@ -582,8 +650,7 @@ const Dashboard = ({ currentUser }) => {
               </div>
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-400">Showing {stats.totalPayins} of {allPayins.length} payins</p>
-              <p className="text-sm text-gray-400">Filtered amount: ₱{stats.totalAmount.toLocaleString()}</p>
+              <p className="text-sm text-gray-400">Showing top {topPerformersCount} performers</p>
             </div>
           </div>
         </motion.div>
@@ -600,7 +667,7 @@ const Dashboard = ({ currentUser }) => {
         </div>
       ) : (
         <>
-          {/* Summary Stats - ALWAYS SHOW DATA */}
+          {/* Summary Stats - ALWAYS SHOW ALL DATA */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {statCards.map((stat, index) => {
               const Icon = stat.icon;
@@ -610,15 +677,8 @@ const Dashboard = ({ currentUser }) => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className={`bg-gradient-to-br ${stat.bgGradient} border border-yellow-600/20 rounded-xl p-6 hover:shadow-lg hover:shadow-yellow-500/10 transition-all duration-300 relative`}
+                  className={`bg-gradient-to-br ${stat.bgGradient} border border-yellow-600/20 rounded-xl p-6 hover:shadow-lg hover:shadow-yellow-500/10 transition-all duration-300`}
                 >
-                  {stat.filtered && (
-                    <div className="absolute -top-2 -right-2">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-900/50 text-blue-400 border border-blue-600/30">
-                        Filtered
-                      </span>
-                    </div>
-                  )}
                   <div className="flex items-center justify-between mb-4">
                     <div className={`bg-gradient-to-br ${stat.gradient} p-3 rounded-lg`}>
                       <Icon className="w-6 h-6 text-white" />
@@ -626,17 +686,12 @@ const Dashboard = ({ currentUser }) => {
                   </div>
                   <p className="text-gray-400 text-sm mb-1">{stat.title}</p>
                   <p className="text-3xl font-bold text-white">{stat.value}</p>
-                  {stat.filtered && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      Based on selected date range
-                    </p>
-                  )}
                 </motion.div>
               );
             })}
           </div>
 
-          {/* Top Performers Section - ALWAYS SHOW DATA */}
+          {/* Top Performers Section - WITH SELECTOR AND DATE FILTER */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -658,13 +713,17 @@ const Dashboard = ({ currentUser }) => {
                   </p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm text-gray-400">
-                  {stats.topPerformers.length} performers shown
-                </p>
-                <p className="text-sm text-gray-400">
-                  Total in period: ₱{stats.totalAmount.toLocaleString()}
-                </p>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-sm text-gray-400">
+                    {stats.topPerformers.length} performers shown
+                  </p>
+                </div>
+                <TopPerformersSelector 
+                  count={topPerformersCount}
+                  onChange={setTopPerformersCount}
+                  maxCount={20}
+                />
               </div>
             </div>
             {stats.topPerformers.length > 0 ? (
@@ -693,22 +752,11 @@ const Dashboard = ({ currentUser }) => {
                           <p className="font-semibold text-white">{performer.name}</p>
                           <p className="text-sm text-gray-400">
                             {performer.count} payin{performer.count !== 1 ? 's' : ''}
-                            {dateRange.startDate && (
-                              <span className="ml-2 text-xs text-blue-400">
-                                Filtered period
-                              </span>
-                            )}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="text-xl font-bold text-green-400">₱{performer.totalAmount.toLocaleString()}</p>
-                        <p className="text-xs text-gray-500">
-                          {stats.totalAmount > 0 
-                            ? `${((performer.totalAmount / stats.totalAmount) * 100).toFixed(1)}% of period total`
-                            : '0% of total'
-                          }
-                        </p>
                       </div>
                     </div>
                     
@@ -759,7 +807,7 @@ const Dashboard = ({ currentUser }) => {
             )}
           </motion.div>
 
-          {/* Recent Payins Section - ALWAYS SHOW DATA */}
+          {/* Recent Payins Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -769,10 +817,7 @@ const Dashboard = ({ currentUser }) => {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-yellow-400">Recent Payins</h2>
               <span className="text-sm text-gray-400">
-                {dateRange.startDate || dateRange.endDate 
-                  ? 'In selected date range' 
-                  : 'Latest 5 payins'
-                }
+                {stats.recentPayins.length} shown
               </span>
             </div>
             {stats.recentPayins.length > 0 ? (
