@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { 
   DollarSign, Users, UserCog, TrendingUp, AlertCircle, 
-  Trophy, Crown, Calendar, Filter, X, ChevronDown, ChevronUp,
-  ChevronLeft, ChevronRight, SlidersHorizontal, Eye
+  Trophy, Crown, Calendar, Filter, X, ChevronDown,
+  ChevronLeft, ChevronRight, Eye, History, CalendarDays
 } from 'lucide-react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '@/lib/firebase';
@@ -285,7 +285,7 @@ const Dashboard = ({ currentUser }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [topPerformersCount, setTopPerformersCount] = useState(5);
 
-  // Initialize with all data on first load
+  // Initialize with default "This Week" (Tuesday-Monday) on first load
   useEffect(() => {
     const payinsRef = ref(db, 'payins');
     const referrorsRef = ref(db, 'referrors');
@@ -298,6 +298,10 @@ const Dashboard = ({ currentUser }) => {
     const unsubPayins = onValue(payinsRef, (snapshot) => {
       payinsData = snapshot.exists() ? Object.values(snapshot.val()) : [];
       setAllPayins(payinsData);
+      
+      // Set default to "This Week" (Tuesday-Monday)
+      const { startDate, endDate } = getThisWeekRange();
+      setDateRange({ startDate, endDate });
       
       // Calculate stats immediately when payins load
       calculateAndSetStats(payinsData, refCount, menCount);
@@ -342,6 +346,50 @@ const Dashboard = ({ currentUser }) => {
     return new Date().toISOString().split('T')[0];
   };
 
+  // Helper function to get current week range (Tuesday-Monday)
+  const getThisWeekRange = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, 2 = Tuesday, etc.
+    
+    let daysSinceLastTuesday;
+    
+    if (dayOfWeek >= 2) { // Tuesday (2) to Saturday (6)
+      daysSinceLastTuesday = dayOfWeek - 2;
+    } else { // Sunday (0) or Monday (1)
+      daysSinceLastTuesday = (dayOfWeek + 7) - 2; // Go back to previous week's Tuesday
+    }
+    
+    const lastTuesday = new Date(today);
+    lastTuesday.setDate(today.getDate() - daysSinceLastTuesday);
+    
+    const nextMonday = new Date(lastTuesday);
+    nextMonday.setDate(lastTuesday.getDate() + 6);
+    
+    return {
+      startDate: lastTuesday.toISOString().split('T')[0],
+      endDate: nextMonday.toISOString().split('T')[0]
+    };
+  };
+
+  // Helper function to get last week range (Tuesday-Monday)
+  const getLastWeekRange = () => {
+    const { startDate: thisWeekStart, endDate: thisWeekEnd } = getThisWeekRange();
+    const thisWeekStartDate = new Date(thisWeekStart);
+    const thisWeekEndDate = new Date(thisWeekEnd);
+    
+    // Subtract 7 days from both start and end dates
+    const lastWeekStartDate = new Date(thisWeekStartDate);
+    lastWeekStartDate.setDate(thisWeekStartDate.getDate() - 7);
+    
+    const lastWeekEndDate = new Date(thisWeekEndDate);
+    lastWeekEndDate.setDate(thisWeekEndDate.getDate() - 7);
+    
+    return {
+      startDate: lastWeekStartDate.toISOString().split('T')[0],
+      endDate: lastWeekEndDate.toISOString().split('T')[0]
+    };
+  };
+
   const applyQuickDatePreset = (preset) => {
     const today = new Date();
     let startDate = '';
@@ -351,17 +399,17 @@ const Dashboard = ({ currentUser }) => {
       case 'today':
         startDate = endDate;
         break;
-      case 'yesterday':
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        startDate = yesterday.toISOString().split('T')[0];
-        endDate = startDate;
+      case 'lastWeek':
+        // Use Last Week (Tuesday-Monday)
+        const { startDate: lastWeekStart, endDate: lastWeekEnd } = getLastWeekRange();
+        startDate = lastWeekStart;
+        endDate = lastWeekEnd;
         break;
       case 'thisWeek':
-        const dayOfWeek = today.getDay();
-        const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-        const monday = new Date(today.setDate(diff));
-        startDate = monday.toISOString().split('T')[0];
+        // Use Tuesday-Monday week
+        const { startDate: weekStart, endDate: weekEnd } = getThisWeekRange();
+        startDate = weekStart;
+        endDate = weekEnd;
         break;
       case 'thisMonth':
         startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -377,6 +425,11 @@ const Dashboard = ({ currentUser }) => {
     }
 
     setDateRange({ startDate, endDate });
+  };
+
+  // One-click All-Time Performance button
+  const viewAllTimePerformance = () => {
+    setDateRange({ startDate: '', endDate: '' });
   };
 
   // Calculate top performers based on date filter
@@ -465,7 +518,8 @@ const Dashboard = ({ currentUser }) => {
   };
 
   const resetDateRange = () => {
-    setDateRange({ startDate: '', endDate: '' });
+    const { startDate, endDate } = getThisWeekRange();
+    setDateRange({ startDate, endDate });
   };
 
   const statCards = [
@@ -499,6 +553,20 @@ const Dashboard = ({ currentUser }) => {
     }
   ];
 
+  // Format date for display
+  const formatDisplayDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  // Check if current view is all-time (no date filter)
+  const isAllTimeView = !dateRange.startDate && !dateRange.endDate;
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -510,15 +578,29 @@ const Dashboard = ({ currentUser }) => {
         </div>
         
         <div className="flex gap-2">
-          {(dateRange.startDate || dateRange.endDate) && (
+          {/* All-Time Performance Button */}
+          {(!isAllTimeView) && (
+            <button
+              onClick={viewAllTimePerformance}
+              className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 text-white font-bold rounded-md flex items-center gap-2 transition-all"
+            >
+              <History className="w-4 h-4" />
+              All-Time Performance
+            </button>
+          )}
+          
+          {/* Clear Filter Button (only show when not default week) */}
+          {(dateRange.startDate && dateRange.endDate && 
+            JSON.stringify(dateRange) !== JSON.stringify(getThisWeekRange())) && (
             <button
               onClick={resetDateRange}
               className="px-4 py-2 bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-800 hover:to-gray-900 text-white font-bold rounded-md flex items-center gap-2 transition-all"
             >
               <X className="w-4 h-4" />
-              Clear Filter
+              This Week
             </button>
           )}
+          
           <button
             onClick={() => setShowDateFilter(!showDateFilter)}
             className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-700 hover:from-yellow-600 hover:to-yellow-800 text-black font-bold rounded-md flex items-center gap-2 transition-all"
@@ -528,6 +610,45 @@ const Dashboard = ({ currentUser }) => {
           </button>
         </div>
       </div>
+
+      {/* Current View Banner */}
+      {dateRange.startDate || dateRange.endDate ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className={`rounded-xl p-4 ${
+            isAllTimeView 
+              ? 'bg-gradient-to-r from-purple-900/20 to-purple-800/10 border border-purple-600/20' 
+              : 'bg-gradient-to-r from-blue-900/20 to-blue-800/10 border border-blue-600/20'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {isAllTimeView ? (
+                <History className="w-5 h-5 text-purple-400" />
+              ) : (
+                <CalendarDays className="w-5 h-5 text-blue-400" />
+              )}
+              <div>
+                <p className={`font-medium ${isAllTimeView ? 'text-purple-400' : 'text-blue-400'}`}>
+                  {isAllTimeView ? 'All-Time Performance View' : 'Weekly Performance View'}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {isAllTimeView 
+                    ? 'Showing all-time performance data' 
+                    : dateRange.startDate && dateRange.endDate
+                      ? `${formatDisplayDate(dateRange.startDate)} to ${formatDisplayDate(dateRange.endDate)}`
+                      : 'Custom date range'
+                  }
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-gray-400">Showing top {topPerformersCount} performers</p>
+            </div>
+          </div>
+        </motion.div>
+      ) : null}
 
       {/* Date Range Filter with Custom Calendar */}
       {showDateFilter && (
@@ -555,15 +676,20 @@ const Dashboard = ({ currentUser }) => {
             <div className="flex flex-wrap gap-2">
               {[
                 { label: 'Today', preset: 'today' },
-                { label: 'Yesterday', preset: 'yesterday' },
-                { label: 'This Week', preset: 'thisWeek' },
+                { label: 'Last Week (Tue-Mon)', preset: 'lastWeek' },
+                { label: 'This Week (Tue-Mon)', preset: 'thisWeek' },
                 { label: 'This Month', preset: 'thisMonth' },
                 { label: 'Last Month', preset: 'lastMonth' }
               ].map(({ label, preset }) => (
                 <button
                   key={preset}
                   onClick={() => applyQuickDatePreset(preset)}
-                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-md text-sm transition-colors"
+                  className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                    preset === 'thisWeek' && 
+                    JSON.stringify(dateRange) === JSON.stringify(getThisWeekRange())
+                      ? 'bg-yellow-500 text-black font-medium'
+                      : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                  }`}
                 >
                   {label}
                 </button>
@@ -593,18 +719,10 @@ const Dashboard = ({ currentUser }) => {
             <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-600/30 rounded-lg">
               <p className="text-sm text-yellow-400">
                 {dateRange.startDate 
-                  ? new Date(dateRange.startDate).toLocaleDateString('en-US', { 
-                      year: 'numeric', 
-                      month: 'short', 
-                      day: 'numeric' 
-                    }) 
+                  ? formatDisplayDate(dateRange.startDate)
                   : 'Beginning'} 
                 to {dateRange.endDate 
-                  ? new Date(dateRange.endDate).toLocaleDateString('en-US', { 
-                      year: 'numeric', 
-                      month: 'short', 
-                      day: 'numeric' 
-                    }) 
+                  ? formatDisplayDate(dateRange.endDate)
                   : 'Present'}
               </p>
             </div>
@@ -615,7 +733,7 @@ const Dashboard = ({ currentUser }) => {
               onClick={resetDateRange}
               className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex-1"
             >
-              Reset Filter
+              This Week
             </button>
             <button
               onClick={handleDateRangeChange}
@@ -623,35 +741,6 @@ const Dashboard = ({ currentUser }) => {
             >
               Apply Filter
             </button>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Filter Status Banner - Only for Top Performers */}
-      {(dateRange.startDate || dateRange.endDate) && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="bg-gradient-to-r from-blue-900/20 to-blue-800/10 border border-blue-600/20 rounded-xl p-4"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Filter className="w-5 h-5 text-blue-400" />
-              <div>
-                <p className="text-blue-400 font-medium">Top Performers Date Filter Active</p>
-                <p className="text-sm text-gray-400">
-                  {dateRange.startDate 
-                    ? new Date(dateRange.startDate).toLocaleDateString()
-                    : 'Beginning'}
-                  {dateRange.endDate 
-                    ? ` to ${new Date(dateRange.endDate).toLocaleDateString()}`
-                    : ' to Present'}
-                </p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-400">Showing top {topPerformersCount} performers</p>
-            </div>
           </div>
         </motion.div>
       )}
@@ -706,9 +795,11 @@ const Dashboard = ({ currentUser }) => {
                 <div>
                   <h2 className="text-2xl font-bold text-yellow-400">Top Performers</h2>
                   <p className="text-sm text-gray-400">
-                    {dateRange.startDate || dateRange.endDate 
-                      ? 'Based on selected date range' 
-                      : 'All-time performance'
+                    {isAllTimeView 
+                      ? 'All-time performance' 
+                      : dateRange.startDate && dateRange.endDate
+                        ? `Weekly performance (${formatDisplayDate(dateRange.startDate)} - ${formatDisplayDate(dateRange.endDate)})`
+                        : 'Based on selected date range'
                     }
                   </p>
                 </div>
@@ -797,7 +888,7 @@ const Dashboard = ({ currentUser }) => {
                 <p>No performance data available {dateRange.startDate || dateRange.endDate ? 'for selected date range' : 'yet'}</p>
                 {dateRange.startDate || dateRange.endDate ? (
                   <button
-                    onClick={resetDateRange}
+                    onClick={viewAllTimePerformance}
                     className="mt-3 px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-700 hover:from-yellow-600 hover:to-yellow-800 text-black font-bold rounded-md transition-colors"
                   >
                     View All Performers
