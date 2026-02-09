@@ -265,11 +265,11 @@ const TopPerformersSelector = ({ count, onChange, maxCount = 20 }) => {
 
 const Dashboard = ({ currentUser }) => {
   const [stats, setStats] = useState({
-    totalPayins: 0,
+    totalSales: 0, // Changed from totalPayins
     totalAmount: 0,
     activeReferrors: 0,
     activeMentors: 0,
-    recentPayins: [],
+    recentSales: [], // Changed from recentPayins
     topPerformers: []
   });
 
@@ -279,7 +279,7 @@ const Dashboard = ({ currentUser }) => {
   });
   
   const [showDateFilter, setShowDateFilter] = useState(false);
-  const [allPayins, setAllPayins] = useState([]);
+  const [allSales, setAllSales] = useState([]); // Changed from allPayins
   const [referrorsCount, setReferrorsCount] = useState(0);
   const [mentorsCount, setMentorsCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -287,24 +287,24 @@ const Dashboard = ({ currentUser }) => {
 
   // Initialize with default "This Week" (Tuesday-Monday) on first load
   useEffect(() => {
-    const payinsRef = ref(db, 'payins');
+    const salesRef = ref(db, 'payins'); // Note: Keeping database path as 'payins' if that's what exists
     const referrorsRef = ref(db, 'referrors');
     const mentorsRef = ref(db, 'mentors');
 
-    let payinsData = [];
+    let salesData = [];
     let refCount = 0;
     let menCount = 0;
 
-    const unsubPayins = onValue(payinsRef, (snapshot) => {
-      payinsData = snapshot.exists() ? Object.values(snapshot.val()) : [];
-      setAllPayins(payinsData);
+    const unsubSales = onValue(salesRef, (snapshot) => {
+      salesData = snapshot.exists() ? Object.values(snapshot.val()) : [];
+      setAllSales(salesData);
       
       // Set default to "This Week" (Tuesday-Monday)
       const { startDate, endDate } = getThisWeekRange();
       setDateRange({ startDate, endDate });
       
-      // Calculate stats immediately when payins load
-      calculateAndSetStats(payinsData, refCount, menCount);
+      // Calculate stats immediately when sales load
+      calculateAndSetStats(salesData, refCount, menCount);
       setIsLoading(false);
     });
 
@@ -312,9 +312,9 @@ const Dashboard = ({ currentUser }) => {
       refCount = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
       setReferrorsCount(refCount);
       
-      // Update stats if payins are already loaded
-      if (payinsData.length > 0) {
-        calculateAndSetStats(payinsData, refCount, menCount);
+      // Update stats if sales are already loaded
+      if (salesData.length > 0) {
+        calculateAndSetStats(salesData, refCount, menCount);
       }
     });
 
@@ -322,14 +322,14 @@ const Dashboard = ({ currentUser }) => {
       menCount = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
       setMentorsCount(menCount);
       
-      // Update stats if payins are already loaded
-      if (payinsData.length > 0) {
-        calculateAndSetStats(payinsData, refCount, menCount);
+      // Update stats if sales are already loaded
+      if (salesData.length > 0) {
+        calculateAndSetStats(salesData, refCount, menCount);
       }
     });
 
     return () => {
-      unsubPayins();
+      unsubSales();
       unsubReferrors();
       unsubMentors();
     };
@@ -337,10 +337,10 @@ const Dashboard = ({ currentUser }) => {
 
   // Update stats when dateRange or topPerformersCount changes
   useEffect(() => {
-    if (allPayins.length > 0) {
-      calculateAndSetStats(allPayins, referrorsCount, mentorsCount);
+    if (allSales.length > 0) {
+      calculateAndSetStats(allSales, referrorsCount, mentorsCount);
     }
-  }, [dateRange, topPerformersCount, allPayins, referrorsCount, mentorsCount]);
+  }, [dateRange, topPerformersCount, allSales, referrorsCount, mentorsCount]);
 
   const getTodayDate = () => {
     return new Date().toISOString().split('T')[0];
@@ -433,35 +433,35 @@ const Dashboard = ({ currentUser }) => {
   };
 
   // Calculate top performers based on date filter
-  const calculateTopPerformers = useCallback((payins, startDate = null, endDate = null) => {
-    let filteredPayins = [...payins];
+  const calculateTopPerformers = useCallback((sales, startDate = null, endDate = null) => {
+    let filteredSales = [...sales];
     
     // Apply date filter if set
     if (startDate) {
-      filteredPayins = filteredPayins.filter(p => p.date >= startDate);
+      filteredSales = filteredSales.filter(s => s.date >= startDate);
     }
     
     if (endDate) {
-      filteredPayins = filteredPayins.filter(p => p.date <= endDate);
+      filteredSales = filteredSales.filter(s => s.date <= endDate);
     }
 
     const referrorMap = new Map();
     
-    filteredPayins.forEach(payin => {
-      const referrorName = payin.referror || 'Unknown';
-      const amount = parseFloat(payin.amount || 0);
+    filteredSales.forEach(sale => {
+      const referrorName = sale.referror || 'Unknown';
+      const amount = parseFloat(sale.amount || 0);
       
       if (referrorMap.has(referrorName)) {
         const existing = referrorMap.get(referrorName);
         existing.totalAmount += amount;
         existing.count += 1;
-        existing.payins.push(payin);
+        existing.sales.push(sale);
       } else {
         referrorMap.set(referrorName, {
           name: referrorName,
           totalAmount: amount,
           count: 1,
-          payins: [payin]
+          sales: [sale]
         });
       }
     });
@@ -474,46 +474,46 @@ const Dashboard = ({ currentUser }) => {
     return performers;
   }, [topPerformersCount]);
 
-  // Calculate total amount from all payins (unfiltered)
-  const calculateTotalAmount = useCallback((payins) => {
-    return payins.reduce((sum, payin) => sum + parseFloat(payin.amount || 0), 0);
+  // Calculate total amount from all sales (unfiltered)
+  const calculateTotalAmount = useCallback((sales) => {
+    return sales.reduce((sum, sale) => sum + parseFloat(sale.amount || 0), 0);
   }, []);
 
   // Main function to calculate and set stats
-  const calculateAndSetStats = useCallback((payins, refCount, menCount) => {
-    // Total Amount and Total Payins always show ALL data (unfiltered)
-    const totalAmount = calculateTotalAmount(payins);
-    const totalPayins = payins.length;
+  const calculateAndSetStats = useCallback((sales, refCount, menCount) => {
+    // Total Amount and Total Sales always show ALL data (unfiltered)
+    const totalAmount = calculateTotalAmount(sales);
+    const totalSales = sales.length;
     
-    // Recent payins show filtered data if date filter is applied
-    let recentPayins = [...payins];
+    // Recent sales show filtered data if date filter is applied
+    let recentSales = [...sales];
     if (dateRange.startDate) {
-      recentPayins = recentPayins.filter(p => p.date >= dateRange.startDate);
+      recentSales = recentSales.filter(s => s.date >= dateRange.startDate);
     }
     if (dateRange.endDate) {
-      recentPayins = recentPayins.filter(p => p.date <= dateRange.endDate);
+      recentSales = recentSales.filter(s => s.date <= dateRange.endDate);
     }
     
     // Sort by date and take top 5
-    const recentFilteredPayins = [...recentPayins]
+    const recentFilteredSales = [...recentSales]
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .slice(0, 5);
     
     // Top performers use the date filter
-    const topPerformers = calculateTopPerformers(payins, dateRange.startDate, dateRange.endDate);
+    const topPerformers = calculateTopPerformers(sales, dateRange.startDate, dateRange.endDate);
 
     setStats({
-      totalPayins, // Always ALL payins
+      totalSales, // Always ALL sales
       totalAmount, // Always ALL amount
       activeReferrors: refCount,
       activeMentors: menCount,
-      recentPayins: recentFilteredPayins,
+      recentSales: recentFilteredSales,
       topPerformers
     });
   }, [dateRange, calculateTopPerformers, calculateTotalAmount]);
 
   const handleDateRangeChange = () => {
-    calculateAndSetStats(allPayins, referrorsCount, mentorsCount);
+    calculateAndSetStats(allSales, referrorsCount, mentorsCount);
     setShowDateFilter(false);
   };
 
@@ -524,8 +524,8 @@ const Dashboard = ({ currentUser }) => {
 
   const statCards = [
     {
-      title: 'Total Payins',
-      value: stats.totalPayins,
+      title: 'Total Package Sold', // Changed from 'Total Payins'
+      value: stats.totalSales,
       icon: DollarSign,
       gradient: 'from-yellow-500 to-yellow-700',
       bgGradient: 'from-yellow-900/20 to-yellow-800/10'
@@ -538,7 +538,7 @@ const Dashboard = ({ currentUser }) => {
       bgGradient: 'from-green-900/20 to-green-800/10'
     },
     {
-      title: 'Active Referrors',
+      title: 'Active Members',
       value: stats.activeReferrors,
       icon: Users,
       gradient: 'from-blue-500 to-blue-700',
@@ -842,7 +842,7 @@ const Dashboard = ({ currentUser }) => {
                         <div>
                           <p className="font-semibold text-white">{performer.name}</p>
                           <p className="text-sm text-gray-400">
-                            {performer.count} payin{performer.count !== 1 ? 's' : ''}
+                            {performer.count} sale{performer.count !== 1 ? 's' : ''} {/* Changed from payins */}
                           </p>
                         </div>
                       </div>
@@ -851,29 +851,29 @@ const Dashboard = ({ currentUser }) => {
                       </div>
                     </div>
                     
-                    {/* Payin Details */}
+                    {/* Sale Details */}
                     <div className="mt-3 border-t border-gray-700 pt-3">
                       <details className="group">
                         <summary className="flex items-center justify-between cursor-pointer text-sm text-yellow-400 hover:text-yellow-300">
-                          <span>View {performer.count} payin details</span>
+                          <span>View {performer.count} sale details</span> {/* Changed from payin details */}
                           <ChevronDown className="w-4 h-4 group-open:rotate-180 transition-transform" />
                         </summary>
                         <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
-                          {performer.payins.slice(0, 10).map((payin, payinIndex) => (
-                            <div key={payinIndex} className="flex items-center justify-between p-2 bg-gray-800/30 rounded text-sm">
+                          {performer.sales.slice(0, 10).map((sale, saleIndex) => ( // Changed from payins to sales
+                            <div key={saleIndex} className="flex items-center justify-between p-2 bg-gray-800/30 rounded text-sm">
                               <div>
-                                <span className="text-white">{payin.name}</span>
-                                <span className="text-gray-400 ml-2">• {payin.date}</span>
+                                <span className="text-white">{sale.name}</span>
+                                <span className="text-gray-400 ml-2">• {sale.date}</span>
                               </div>
                               <div className="flex items-center gap-3">
-                                <span className="text-gray-400">Mentor: {payin.mentor}</span>
-                                <span className="text-yellow-400 font-medium">₱{payin.amount}</span>
+                                <span className="text-gray-400">Mentor: {sale.mentor}</span>
+                                <span className="text-yellow-400 font-medium">₱{sale.amount}</span>
                               </div>
                             </div>
                           ))}
-                          {performer.payins.length > 10 && (
+                          {performer.sales.length > 10 && (
                             <p className="text-xs text-gray-500 text-center">
-                              ... and {performer.payins.length - 10} more payins
+                              ... and {performer.sales.length - 10} more sales {/* Changed from payins */}
                             </p>
                           )}
                         </div>
@@ -898,7 +898,7 @@ const Dashboard = ({ currentUser }) => {
             )}
           </motion.div>
 
-          {/* Recent Payins Section */}
+          {/* Recent Sales Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -906,28 +906,28 @@ const Dashboard = ({ currentUser }) => {
             className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-600/20 rounded-xl p-6"
           >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-yellow-400">Recent Payins</h2>
+              <h2 className="text-2xl font-bold text-yellow-400">Recent Sales</h2> {/* Changed from Recent Payins */}
               <span className="text-sm text-gray-400">
-                {stats.recentPayins.length} shown
+                {stats.recentSales.length} shown
               </span>
             </div>
-            {stats.recentPayins.length > 0 ? (
+            {stats.recentSales.length > 0 ? (
               <div className="space-y-3">
-                {stats.recentPayins.map((payin) => (
+                {stats.recentSales.map((sale) => ( // Changed from payin to sale
                   <div
-                    key={payin.id}
+                    key={sale.id}
                     className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 hover:border-yellow-600/50 transition-all duration-300"
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-semibold text-white">{payin.name}</p>
+                        <p className="font-semibold text-white">{sale.name}</p>
                         <p className="text-sm text-gray-400">
-                          Referror: {payin.referror} | Mentor: {payin.mentor}
+                          Referror: {sale.referror} | Mentor: {sale.mentor}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xl font-bold text-yellow-400">₱{payin.amount}</p>
-                        <p className="text-xs text-gray-500">{payin.date}</p>
+                        <p className="text-xl font-bold text-yellow-400">₱{sale.amount}</p>
+                        <p className="text-xs text-gray-500">{sale.date}</p>
                       </div>
                     </div>
                   </div>
@@ -936,7 +936,7 @@ const Dashboard = ({ currentUser }) => {
             ) : (
               <div className="text-center py-12 text-gray-500">
                 <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>No payins recorded {dateRange.startDate || dateRange.endDate ? 'in selected date range' : 'yet'}</p>
+                <p>No sales recorded {dateRange.startDate || dateRange.endDate ? 'in selected date range' : 'yet'}</p> {/* Changed from payins */}
               </div>
             )}
           </motion.div>

@@ -20,7 +20,7 @@ const Sidebar = ({
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true, shortLabel: 'Dash' },
-    { id: 'payins', label: 'Payins', icon: DollarSign, show: !isGuest, shortLabel: '$' },
+    { id: 'payins', label: 'Sales', icon: DollarSign, show: !isGuest, shortLabel: '$' },
     { id: 'referrors', label: 'Referrors', icon: Users, show: !isGuest, shortLabel: 'Ref' },
     { id: 'mentors', label: 'Mentors', icon: UserCog, show: !isGuest, shortLabel: 'Ment' },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, show: !isGuest && hasPermission(currentUser, PERMISSIONS.VIEW_ANALYTICS, roles), shortLabel: 'Stats' },
@@ -100,7 +100,7 @@ const Sidebar = ({
             </div>
           ) : (
             <div className="text-xs text-gray-500">
-              PayinMonitor v1.0.5
+              SalesMonitoring v1.0.5
             </div>
           )}
         </div>
